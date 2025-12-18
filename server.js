@@ -3,7 +3,7 @@
 
 const express = require('express');
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 1000;
 
 // ===== WEBHOOKS DO DISCORD =====
 const WEBHOOKS = {
@@ -454,3 +454,4 @@ app.listen(PORT, () => {
     console.log(`📊 Dashboard: /\n`);
     console.log('✅ Aguardando notificações...\n');
 });
+
