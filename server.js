@@ -7,11 +7,11 @@ const PORT = process.env.PORT || 3000;
 
 // ===== WEBHOOKS DO DISCORD =====
 const WEBHOOKS = {
-    normal: "https://discord.com/api/webhooks/1451031458612252704/Oo1K9KNcTSRbRFcSTlveMyNnMA2DOKFATnYKSI8Q-RvMBPI5ZnqF0dRkjKgGHq7o5c1D",
-    special: "https://discord.com/api/webhooks/1449966669005848668/QAjwTBI7Erv6mZr5hTvsX3Ctgwofoboj7bZZot4v02f6TiGQJustRdsd_ax0vgCo9NTU",
-    ultraHigh: "https://discord.com/api/webhooks/1451031692927041678/Pwu3TLXC61aPFcXkz7xnz8P0hoq_vyI2z2-f9t6nSqQ5ncM7A4JsbplrBiDCMjDOKGTl",
-    highlight: "https://discord.com/api/webhooks/1451031769687134292/ZCdEm84p2TJPAztbpFUc0ovMRS8l97D9ZX9_70zBKCGHY_xufru7yySP5oyqRxpzmkBj",
-    midHighlight: "https://discord.com/api/webhooks/1450158161959850086/E8uoVdUtw6qYnUi57zJEbAADvQ5OFXUdMGkR1cPu3934jA-Gm3jCvdbbEJhBbDROLHIf"
+    free: "https://discord.com/api/webhooks/1451031458612252704/Oo1K9KNcTSRbRFcSTlveMyNnMA2DOKFATnYKSI8Q-RvMBPI5ZnqF0dRkjKgGHq7o5c1D",
+    basico: "https://discord.com/api/webhooks/1449966669005848668/QAjwTBI7Erv6mZr5hTvsX3Ctgwofoboj7bZZot4v02f6TiGQJustRdsd_ax0vgCo9NTU",
+    avancado: "https://discord.com/api/webhooks/1451031692927041678/Pwu3TLXC61aPFcXkz7xnz8P0hoq_vyI2z2-f9t6nSqQ5ncM7A4JsbplrBiDCMjDOKGTl",
+    essencial: "https://discord.com/api/webhooks/1450158161959850086/E8uoVdUtw6qYnUi57zJEbAADvQ5OFXUdMGkR1cPu3934jA-Gm3jCvdbbEJhBbDROLHIf",
+    premium: "https://discord.com/api/webhooks/1451031769687134292/ZCdEm84p2TJPAztbpFUc0ovMRS8l97D9ZX9_70zBKCGHY_xufru7yySP5oyqRxpzmkBj"
 };
 
 // ===== LOGS DETALHADOS =====
@@ -71,11 +71,11 @@ let stats = {
     lastUpdate: null,
     startTime: new Date().toISOString(),
     byWebhook: {
-        normal: 0,
-        special: 0,
-        ultraHigh: 0,
-        highlight: 0,
-        midHighlight: 0
+        free: 0,
+        basico: 0,
+        avancado: 0,
+        essencial: 0,
+        premium: 0
     }
 };
 
@@ -235,11 +235,11 @@ function processWebhook(req, res, category) {
 }
 
 // ===== ENDPOINTS INDIVIDUAIS =====
-app.post('/webhook/normal', (req, res) => processWebhook(req, res, 'normal'));
-app.post('/webhook/special', (req, res) => processWebhook(req, res, 'special'));
-app.post('/webhook/ultra-high', (req, res) => processWebhook(req, res, 'ultraHigh'));
-app.post('/webhook/highlight', (req, res) => processWebhook(req, res, 'highlight'));
-app.post('/webhook/mid-highlight', (req, res) => processWebhook(req, res, 'midHighlight'));
+app.post('/webhook/free', (req, res) => processWebhook(req, res, 'free'));
+app.post('/webhook/basico', (req, res) => processWebhook(req, res, 'basico'));
+app.post('/webhook/avancado', (req, res) => processWebhook(req, res, 'avancado'));
+app.post('/webhook/essencial', (req, res) => processWebhook(req, res, 'essencial'));
+app.post('/webhook/premium', (req, res) => processWebhook(req, res, 'premium'));
 
 // ===== ENDPOINT UNIVERSAL =====
 app.post('/discord-webhook', (req, res) => processWebhook(req, res, 'universal'));
@@ -473,24 +473,24 @@ app.get('/', (req, res) => {
             <h3 style="margin-top: 20px; margin-bottom: 10px;">📈 Por Categoria</h3>
             <div class="stat-grid">
                 <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.normal}</div>
-                    <div class="stat-label">Normal</div>
+                    <div class="stat-value">${stats.byWebhook.free}</div>
+                    <div class="stat-label">Free</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.special}</div>
-                    <div class="stat-label">Special</div>
+                    <div class="stat-value">${stats.byWebhook.basico}</div>
+                    <div class="stat-label">Básico</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.ultraHigh}</div>
-                    <div class="stat-label">Ultra High</div>
+                    <div class="stat-value">${stats.byWebhook.avancado}</div>
+                    <div class="stat-label">Avançado</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.highlight}</div>
-                    <div class="stat-label">Highlight</div>
+                    <div class="stat-value">${stats.byWebhook.essencial}</div>
+                    <div class="stat-label">Essencial</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.midHighlight}</div>
-                    <div class="stat-label">Mid Highlight</div>
+                    <div class="stat-value">${stats.byWebhook.premium}</div>
+                    <div class="stat-label">Premium</div>
                 </div>
             </div>
         </div>
@@ -499,24 +499,24 @@ app.get('/', (req, res) => {
             <h2>🔗 URLs dos Webhooks</h2>
             <div class="webhook-list">
                 <div class="webhook-item">
-                    <strong>🟢 Normal (1M - 9M):</strong>
-                    <code>${host}/webhook/normal</code>
+                    <strong>⚪ Free (1M - 9M):</strong>
+                    <code>${host}/webhook/free</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>🟡 Special (10M - 99M):</strong>
-                    <code>${host}/webhook/special</code>
+                    <strong>🟢 Básico (10M - 99M):</strong>
+                    <code>${host}/webhook/basico</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>🟠 Ultra High (100M - 149M):</strong>
-                    <code>${host}/webhook/ultra-high</code>
+                    <strong>🟡 Avançado (100M - 149M):</strong>
+                    <code>${host}/webhook/avancado</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>🔴 Highlight (150M+):</strong>
-                    <code>${host}/webhook/highlight</code>
+                    <strong>🟠 Essencial (150M - 299M):</strong>
+                    <code>${host}/webhook/essencial</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>🟣 Mid Highlight (300M+):</strong>
-                    <code>${host}/webhook/mid-highlight</code>
+                    <strong>🔴 Premium (300M+):</strong>
+                    <code>${host}/webhook/premium</code>
                 </div>
             </div>
         </div>
@@ -590,11 +590,11 @@ app.listen(PORT, () => {
     console.log(`🌐 Porta: ${PORT}`);
     console.log(`⏱️  Timeout: 4 segundos`);
     console.log(`📥 Webhooks configurados:`);
-    console.log(`   • Normal: /webhook/normal`);
-    console.log(`   • Special: /webhook/special`);
-    console.log(`   • Ultra High: /webhook/ultra-high`);
-    console.log(`   • Highlight: /webhook/highlight`);
-    console.log(`   • Mid Highlight: /webhook/mid-highlight`);
+    console.log(`   • Free: /webhook/free`);
+    console.log(`   • Básico: /webhook/basico`);
+    console.log(`   • Avançado: /webhook/avancado`);
+    console.log(`   • Essencial: /webhook/essencial`);
+    console.log(`   • Premium: /webhook/premium`);
     console.log(`   • Universal: /discord-webhook`);
     console.log(`📤 API: /get-job`);
     console.log(`📊 Dashboard: /\n`);
