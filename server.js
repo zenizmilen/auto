@@ -67,6 +67,7 @@ let stats = {
     totalReceived: 0,
     totalProcessed: 0,
     totalFailed: 0,
+    totalExpired: 0,
     lastUpdate: null,
     startTime: new Date().toISOString(),
     byWebhook: {
@@ -174,6 +175,22 @@ function parseWebhook(body) {
     }
 }
 
+// ===== FUNÇÃO PARA REMOVER JOB APÓS 4 SEGUNDOS =====
+function scheduleJobRemoval(job) {
+    setTimeout(() => {
+        const index = jobQueue.findIndex(j => j.jobId === job.jobId);
+        if (index !== -1) {
+            jobQueue.splice(index, 1);
+            stats.totalExpired++;
+            addLog('warning', `Job removido por timeout (4s)`, {
+                name: job.name,
+                jobId: job.jobId,
+                category: job.category
+            });
+        }
+    }, 4000); // 4 segundos
+}
+
 // ===== FUNÇÃO GENÉRICA PARA PROCESSAR WEBHOOKS =====
 function processWebhook(req, res, category) {
     addLog('info', `Processando webhook ${category}`, {
@@ -196,7 +213,10 @@ function processWebhook(req, res, category) {
             stats.byWebhook[category]++;
             stats.lastUpdate = new Date().toISOString();
             
-            addLog('success', `[${category.toUpperCase()}] Job adicionado à fila`, {
+            // Agenda remoção automática após 4 segundos
+            scheduleJobRemoval(job);
+            
+            addLog('success', `[${category.toUpperCase()}] Job adicionado à fila (será removido em 4s)`, {
                 name: job.name,
                 jobId: job.jobId,
                 players: job.players,
@@ -226,7 +246,8 @@ app.post('/discord-webhook', (req, res) => processWebhook(req, res, 'universal')
 
 // ===== ROBLOX PEGA JOB =====
 app.get('/get-job', (req, res) => {
-    jobQueue = jobQueue.filter(j => (Date.now() - j.time) < 600000);
+    // Remove jobs que já expiraram (mais de 4 segundos)
+    jobQueue = jobQueue.filter(j => (Date.now() - j.time) < 4000);
     
     if (jobQueue.length > 0) {
         const job = jobQueue.shift();
@@ -368,6 +389,17 @@ app.get('/', (req, res) => {
             padding: 15px;
             border-radius: 10px;
             margin-bottom: 10px;
+            position: relative;
+        }
+        .queue-item .timer {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(239,68,68,0.3);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.85em;
+            font-weight: bold;
         }
         .queue-empty {
             text-align: center;
@@ -391,6 +423,14 @@ app.get('/', (req, res) => {
             font-size: 0.85em;
             margin-left: 10px;
         }
+        .timeout-warning {
+            background: rgba(251,191,36,0.2);
+            border: 2px solid #fbbf24;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -399,6 +439,10 @@ app.get('/', (req, res) => {
             <h1>🔥 Brainrot Auto-Joiner</h1>
             <span class="online-badge">● ONLINE</span>
             ${stats.totalFailed > 0 ? `<span class="badge-failed">${stats.totalFailed} Falhas</span>` : ''}
+        </div>
+        
+        <div class="timeout-warning">
+            ⏱️ <strong>Jobs são removidos automaticamente após 4 segundos na fila</strong>
         </div>
         
         <div class="status">
@@ -411,6 +455,10 @@ app.get('/', (req, res) => {
                 <div class="stat-item">
                     <div class="stat-value">${stats.totalProcessed}</div>
                     <div class="stat-label">Processados</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${stats.totalExpired}</div>
+                    <div class="stat-label">Expirados</div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-value">${stats.totalFailed}</div>
@@ -485,19 +533,22 @@ app.get('/', (req, res) => {
         </div>
         
         <div class="queue" style="margin-top: 20px;">
-            <h2>📋 Fila de Jobs</h2>
-            ${jobQueue.length > 0 ? jobQueue.map(j => `
+            <h2>📋 Fila de Jobs (Timeout: 4s)</h2>
+            ${jobQueue.length > 0 ? jobQueue.map(j => {
+                const timeLeft = Math.max(0, 4 - Math.floor((Date.now() - j.time) / 1000));
+                return `
                 <div class="queue-item">
+                    <div class="timer">⏱️ ${timeLeft}s</div>
                     <strong>🔥 ${j.name}</strong> <span style="opacity: 0.7;">[${j.category}]</span><br>
                     <small>Job ID: ${j.jobId}</small><br>
                     <small>Jogadores: ${j.players} | Valor: $${j.value}/s</small>
                 </div>
-            `).join('') : '<div class="queue-empty">Nenhum job na fila</div>'}
+            `}).join('') : '<div class="queue-empty">Nenhum job na fila</div>'}
         </div>
     </div>
     
     <script>
-        setTimeout(() => location.reload(), 3000);
+        setTimeout(() => location.reload(), 1000);
     </script>
 </body>
 </html>
@@ -515,7 +566,8 @@ app.get('/status', (req, res) => {
             players: j.players,
             value: j.value,
             category: j.category,
-            time: new Date(j.time).toISOString()
+            time: new Date(j.time).toISOString(),
+            timeLeft: Math.max(0, 4 - Math.floor((Date.now() - j.time) / 1000))
         }))
     });
 });
@@ -523,19 +575,20 @@ app.get('/status', (req, res) => {
 // ===== LIMPA JOBS ANTIGOS =====
 setInterval(() => {
     const before = jobQueue.length;
-    jobQueue = jobQueue.filter(j => (Date.now() - j.time) < 600000);
+    jobQueue = jobQueue.filter(j => (Date.now() - j.time) < 4000);
     if (before > jobQueue.length) {
         addLog('info', `Limpeza automática: ${before - jobQueue.length} jobs expirados removidos`);
     }
-}, 60000);
+}, 1000); // Verifica a cada 1 segundo
 
 // ===== INICIA SERVIDOR =====
 app.listen(PORT, () => {
     console.log('\n╔════════════════════════════════════════╗');
     console.log('║   🔥 SERVIDOR AUTO-JOINER ONLINE 🔥   ║');
-    console.log('║        MODE: DEBUG COM LOGS            ║');
+    console.log('║     MODE: DEBUG COM TIMEOUT 4s         ║');
     console.log('╚════════════════════════════════════════╝\n');
     console.log(`🌐 Porta: ${PORT}`);
+    console.log(`⏱️  Timeout: 4 segundos`);
     console.log(`📥 Webhooks configurados:`);
     console.log(`   • Normal: /webhook/normal`);
     console.log(`   • Special: /webhook/special`);
@@ -546,5 +599,5 @@ app.listen(PORT, () => {
     console.log(`📤 API: /get-job`);
     console.log(`📊 Dashboard: /\n`);
     console.log('✅ Aguardando notificações...\n');
-    addLog('success', 'Servidor iniciado com sucesso');
+    addLog('success', 'Servidor iniciado com sucesso (Timeout: 4s)');
 });
