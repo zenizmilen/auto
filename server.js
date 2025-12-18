@@ -98,32 +98,71 @@ function parseWebhook(body) {
             const embed = embeds[i];
             addLog('info', `Processando embed ${i}`, { 
                 title: embed.title,
-                description: embed.description?.substring(0, 100) 
+                description: embed.description?.substring(0, 100),
+                fields: embed.fields
             });
             
-            const desc = embed.description || '';
+            // Tenta extrair do TITLE primeiro (formato: "🔥 Nome do Brainrot" ou "💎 Nome do Brainrot")
+            let name = 'Brainrot';
+            if (embed.title) {
+                const titleMatch = embed.title.match(/[🔥💎⭐🚨⭐]\s*(.+)/);
+                if (titleMatch) {
+                    name = titleMatch[1].trim();
+                    // Remove " - MIDLIGHT" ou outros sufixos
+                    name = name.replace(/\s*-\s*(MIDLIGHT|HIGHLIGHT).*$/i, '').trim();
+                }
+            }
             
-            // Extrai nome do brainrot
-            const nameMatch = desc.match(/🔥\s*(.+?)[\n\r]/);
-            const name = nameMatch ? nameMatch[1].trim() : 'Brainrot';
+            // Extrai Job ID dos FIELDS
+            let jobId = null;
+            let players = 'N/A';
+            let value = '0';
             
-            // Extrai Job ID
-            const jobMatch = desc.match(/Server ID:\s*\n\s*([a-f0-9\-]+)/);
-            const jobId = jobMatch ? jobMatch[1].trim() : null;
+            if (embed.fields && Array.isArray(embed.fields)) {
+                for (const field of embed.fields) {
+                    // Procura pelo campo com Job ID
+                    if (field.name && field.name.includes('Job ID') || field.name.includes('🌐')) {
+                        const jobMatch = field.value.match(/[`]*([a-f0-9\-]{36})[`]*/);
+                        if (jobMatch) {
+                            jobId = jobMatch[1];
+                        }
+                    }
+                    
+                    // Procura pelo campo de Valor
+                    if (field.name && (field.name.includes('Valor') || field.name.includes('💰'))) {
+                        const valMatch = field.value.match(/\$?([0-9.]+[KMBT]?)/);
+                        if (valMatch) {
+                            value = valMatch[1];
+                        }
+                    }
+                    
+                    // Procura jogadores no campo "Players" ou "Informações do Server"
+                    if (field.name && (field.name.includes('Players') || field.name.includes('👥') || field.name.includes('Informações'))) {
+                        const playMatch = field.value.match(/(\d+)\/(\d+)/);
+                        if (playMatch) {
+                            players = `${playMatch[1]}/${playMatch[2]}`;
+                        }
+                    }
+                }
+            }
             
-            // Extrai jogadores
-            const playersMatch = desc.match(/Jogadores:\s*(\d+)\/(\d+)/);
-            const players = playersMatch ? `${playersMatch[1]}/${playersMatch[2]}` : 'N/A';
-            
-            // Extrai valor
-            const valueMatch = desc.match(/\$([0-9.]+[MK]?)\/s/);
-            const value = valueMatch ? valueMatch[1] : '0';
+            // Se não achou nos fields, tenta na description
+            if (!jobId) {
+                const desc = embed.description || '';
+                const jobMatch = desc.match(/[`]*([a-f0-9\-]{36})[`]*/);
+                if (jobMatch) {
+                    jobId = jobMatch[1];
+                }
+            }
             
             if (jobId) {
                 addLog('success', 'Job parseado com sucesso', { jobId, name, players, value });
                 return { jobId, name, players, value, time: Date.now() };
             } else {
-                addLog('warning', 'Job ID não encontrado no embed', { desc: desc.substring(0, 200) });
+                addLog('warning', 'Job ID não encontrado no embed', { 
+                    title: embed.title,
+                    fields: embed.fields 
+                });
             }
         }
         
