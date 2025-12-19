@@ -496,23 +496,23 @@ app.get('/', (req, res) => {
             <div class="stat-grid">
                 <div class="stat-item">
                     <div class="stat-value">${stats.byWebhook.free}</div>
-                    <div class="stat-label">⭐ Free</div>
+                    <div class="stat-label">⭐ FREE</div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-value">${stats.byWebhook.basico}</div>
-                    <div class="stat-label">🔥 Básico</div>
+                    <div class="stat-label">🔥 BÁSICO</div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-value">${stats.byWebhook.essencial}</div>
-                    <div class="stat-label">⭐ Essencial</div>
+                    <div class="stat-label">⭐ ESSENCIAL</div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-value">${stats.byWebhook.premium}</div>
-                    <div class="stat-label">🚨 Premium</div>
+                    <div class="stat-label">🚨 PREMIUM</div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-value">${stats.byWebhook.highlight}</div>
-                    <div class="stat-label">💎 Highlight</div>
+                    <div class="stat-label">💎 HIGHLIGHT</div>
                 </div>
             </div>
         </div>
@@ -521,23 +521,23 @@ app.get('/', (req, res) => {
             <h2>🔗 URLs dos Webhooks</h2>
             <div class="webhook-list">
                 <div class="webhook-item">
-                    <strong>⭐ Free (>= 1M):</strong>
+                    <strong>⭐ FREE (>= 1M):</strong>
                     <code>${host}/webhook/normal</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>🔥 Básico (>= 10M com Job ID):</strong>
+                    <strong>🔥 BÁSICO (>= 10M com Job ID):</strong>
                     <code>${host}/webhook/special</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>⭐ Essencial (>= 10M lista):</strong>
+                    <strong>⭐ ESSENCIAL (>= 10M lista):</strong>
                     <code>${host}/webhook/mid-highlight</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>🚨 Premium (>= 50M lista):</strong>
+                    <strong>🚨 PREMIUM (>= 50M lista):</strong>
                     <code>${host}/webhook/premium</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>💎 Highlight (>= 10M SEM Job ID):</strong>
+                    <strong>💎 HIGHLIGHT (>= 10M SEM Job ID):</strong>
                     <code>${host}/webhook/highlight</code>
                 </div>
             </div>
