@@ -7,11 +7,11 @@ const PORT = process.env.PORT || 3000;
 
 // ===== WEBHOOKS DO DISCORD =====
 const WEBHOOKS = {
-    normal: "https://discord.com/api/webhooks/1451031458612252704/Oo1K9KNcTSRbRFcSTlveMyNnMA2DOKFATnYKSI8Q-RvMBPI5ZnqF0dRkjKgGHq7o5c1D",
-    special: "https://discord.com/api/webhooks/1449966669005848668/QAjwTBI7Erv6mZr5hTvsX3Ctgwofoboj7bZZot4v02f6TiGQJustRdsd_ax0vgCo9NTU",
-    ultraHigh: "https://discord.com/api/webhooks/1451031692927041678/Pwu3TLXC61aPFcXkz7xnz8P0hoq_vyI2z2-f9t6nSqQ5ncM7A4JsbplrBiDCMjDOKGTl",
-    highlight: "https://discord.com/api/webhooks/1451031769687134292/ZCdEm84p2TJPAztbpFUc0ovMRS8l97D9ZX9_70zBKCGHY_xufru7yySP5oyqRxpzmkBj",
-    midHighlight: "https://discord.com/api/webhooks/1450158161959850086/E8uoVdUtw6qYnUi57zJEbAADvQ5OFXUdMGkR1cPu3934jA-Gm3jCvdbbEJhBbDROLHIf"
+    free: "https://discord.com/api/webhooks/1451031458612252704/Oo1K9KNcTSRbRFcSTlveMyNnMA2DOKFATnYKSI8Q-RvMBPI5ZnqF0dRkjKgGHq7o5c1D",
+    basico: "https://discord.com/api/webhooks/1449966669005848668/QAjwTBI7Erv6mZr5hTvsX3Ctgwofoboj7bZZot4v02f6TiGQJustRdsd_ax0vgCo9NTU",
+    highlight: "https://discord.com/api/webhooks/1451031692927041678/Pwu3TLXC61aPFcXkz7xnz8P0hoq_vyI2z2-f9t6nSqQ5ncM7A4JsbplrBiDCMjDOKGTl",
+    premium: "https://discord.com/api/webhooks/1451031769687134292/ZCdEm84p2TJPAztbpFUc0ovMRS8l97D9ZX9_70zBKCGHY_xufru7yySP5oyqRxpzmkBj",
+    essencial: "https://discord.com/api/webhooks/1450158161959850086/E8uoVdUtw6qYnUi57zJEbAADvQ5OFXUdMGkR1cPu3934jA-Gm3jCvdbbEJhBbDROLHIf"
 };
 
 // ===== LOGS DETALHADOS =====
@@ -71,11 +71,11 @@ let stats = {
     lastUpdate: null,
     startTime: new Date().toISOString(),
     byWebhook: {
-        normal: 0,
-        special: 0,
-        ultraHigh: 0,
+        free: 0,
+        basico: 0,
         highlight: 0,
-        midHighlight: 0
+        premium: 0,
+        essencial: 0
     }
 };
 
@@ -106,11 +106,13 @@ function parseWebhook(body) {
             // Tenta extrair do TITLE primeiro (formato: "🔥 Nome do Brainrot" ou "💎 Nome do Brainrot")
             let name = 'Brainrot';
             if (embed.title) {
-                const titleMatch = embed.title.match(/[🔥💎⭐🚨⭐]\s*(.+)/);
+                const titleMatch = embed.title.match(/[🔥💎⭐🚨☯️]/);
                 if (titleMatch) {
-                    name = titleMatch[1].trim();
-                    // Remove " - MIDLIGHT" ou outros sufixos
-                    name = name.replace(/\s*-\s*(MIDLIGHT|HIGHLIGHT).*$/i, '').trim();
+                    name = embed.title.replace(/[🔥💎⭐🚨☯️]/g, '').trim();
+                    // Remove " - " e sufixos
+                    name = name.replace(/\s*-\s*.*$/i, '').trim();
+                    // Remove valores /s
+                    name = name.replace(/\s*\d+\.?\d*[KMBT]?\/s.*$/i, '').trim();
                 }
             }
             
@@ -122,7 +124,7 @@ function parseWebhook(body) {
             if (embed.fields && Array.isArray(embed.fields)) {
                 for (const field of embed.fields) {
                     // Procura pelo campo com Job ID
-                    if (field.name && field.name.includes('Job ID') || field.name.includes('🌐')) {
+                    if (field.name && (field.name.includes('Job ID') || field.name.includes('🌐'))) {
                         const jobMatch = field.value.match(/[`]*([a-f0-9\-]{36})[`]*/);
                         if (jobMatch) {
                             jobId = jobMatch[1];
@@ -156,9 +158,10 @@ function parseWebhook(body) {
                 }
             }
             
-            if (jobId) {
-                addLog('success', 'Job parseado com sucesso', { jobId, name, players, value });
-                return { jobId, name, players, value, time: Date.now() };
+            // Para Highlight, não precisa de Job ID (pode ser null)
+            if (jobId || name !== 'Brainrot') {
+                addLog('success', 'Job parseado com sucesso', { jobId: jobId || 'N/A (Highlight)', name, players, value });
+                return { jobId: jobId || null, name, players, value, time: Date.now() };
             } else {
                 addLog('warning', 'Job ID não encontrado no embed', { 
                     title: embed.title,
@@ -178,13 +181,16 @@ function parseWebhook(body) {
 // ===== FUNÇÃO PARA REMOVER JOB APÓS 4 SEGUNDOS =====
 function scheduleJobRemoval(job) {
     setTimeout(() => {
-        const index = jobQueue.findIndex(j => j.jobId === job.jobId);
+        const index = jobQueue.findIndex(j => 
+            (j.jobId === job.jobId && job.jobId !== null) || 
+            (j.name === job.name && j.time === job.time)
+        );
         if (index !== -1) {
             jobQueue.splice(index, 1);
             stats.totalExpired++;
             addLog('warning', `Job removido por timeout (4s)`, {
                 name: job.name,
-                jobId: job.jobId,
+                jobId: job.jobId || 'N/A',
                 category: job.category
             });
         }
@@ -201,10 +207,13 @@ function processWebhook(req, res, category) {
     const job = parseWebhook(req.body);
     
     if (job) {
-        // Evita duplicatas
-        const isDupe = jobQueue.some(j => 
-            j.jobId === job.jobId && (Date.now() - j.time) < 300000
-        );
+        // Para Highlight, não verifica duplicata por Job ID (pode não ter)
+        let isDupe = false;
+        if (category !== 'highlight') {
+            isDupe = jobQueue.some(j => 
+                j.jobId === job.jobId && job.jobId !== null && (Date.now() - j.time) < 300000
+            );
+        }
         
         if (!isDupe) {
             job.category = category;
@@ -218,7 +227,7 @@ function processWebhook(req, res, category) {
             
             addLog('success', `[${category.toUpperCase()}] Job adicionado à fila (será removido em 4s)`, {
                 name: job.name,
-                jobId: job.jobId,
+                jobId: job.jobId || 'N/A (sem Job ID)',
                 players: job.players,
                 value: job.value,
                 queueSize: jobQueue.length
@@ -235,11 +244,11 @@ function processWebhook(req, res, category) {
 }
 
 // ===== ENDPOINTS INDIVIDUAIS =====
-app.post('/webhook/normal', (req, res) => processWebhook(req, res, 'normal'));
-app.post('/webhook/special', (req, res) => processWebhook(req, res, 'special'));
-app.post('/webhook/ultra-high', (req, res) => processWebhook(req, res, 'ultraHigh'));
+app.post('/webhook/normal', (req, res) => processWebhook(req, res, 'free'));
+app.post('/webhook/special', (req, res) => processWebhook(req, res, 'basico'));
 app.post('/webhook/highlight', (req, res) => processWebhook(req, res, 'highlight'));
-app.post('/webhook/mid-highlight', (req, res) => processWebhook(req, res, 'midHighlight'));
+app.post('/webhook/premium', (req, res) => processWebhook(req, res, 'premium'));
+app.post('/webhook/mid-highlight', (req, res) => processWebhook(req, res, 'essencial'));
 
 // ===== ENDPOINT UNIVERSAL =====
 app.post('/discord-webhook', (req, res) => processWebhook(req, res, 'universal'));
@@ -253,12 +262,12 @@ app.get('/get-job', (req, res) => {
         const job = jobQueue.shift();
         stats.totalProcessed++;
         
-        addLog('success', 'Job enviado para Roblox', { name: job.name, jobId: job.jobId });
+        addLog('success', 'Job enviado para Roblox', { name: job.name, jobId: job.jobId || 'N/A' });
         
         return res.json({
             success: true,
             job: {
-                jobId: job.jobId,
+                jobId: job.jobId || null,
                 brainrotName: job.name,
                 currentPlayers: job.players.split('/')[0],
                 maxPlayers: job.players.split('/')[1],
@@ -281,7 +290,7 @@ app.get('/', (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brainrot Auto-Joiner - Debug Mode</title>
+    <title>Brainrot Auto-Joiner - ClufinNotify</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -431,12 +440,25 @@ app.get('/', (req, res) => {
             margin-bottom: 20px;
             text-align: center;
         }
+        .category-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-size: 0.85em;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+        .badge-free { background: rgba(91, 134, 229, 0.3); color: #93c5fd; }
+        .badge-basico { background: rgba(251, 113, 33, 0.3); color: #fb923c; }
+        .badge-highlight { background: rgba(155, 89, 182, 0.3); color: #c084fc; }
+        .badge-essencial { background: rgba(251, 191, 36, 0.3); color: #fbbf24; }
+        .badge-premium { background: rgba(239, 68, 68, 0.3); color: #ef4444; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔥 Brainrot Auto-Joiner</h1>
+            <h1>🔥 ClufinNotify Auto-Joiner</h1>
             <span class="online-badge">● ONLINE</span>
             ${stats.totalFailed > 0 ? `<span class="badge-failed">${stats.totalFailed} Falhas</span>` : ''}
         </div>
@@ -473,24 +495,24 @@ app.get('/', (req, res) => {
             <h3 style="margin-top: 20px; margin-bottom: 10px;">📈 Por Categoria</h3>
             <div class="stat-grid">
                 <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.normal}</div>
-                    <div class="stat-label">Normal</div>
+                    <div class="stat-value">${stats.byWebhook.free}</div>
+                    <div class="stat-label">⭐ Free</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.special}</div>
-                    <div class="stat-label">Special</div>
+                    <div class="stat-value">${stats.byWebhook.basico}</div>
+                    <div class="stat-label">🔥 Básico</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.ultraHigh}</div>
-                    <div class="stat-label">Ultra High</div>
+                    <div class="stat-value">${stats.byWebhook.essencial}</div>
+                    <div class="stat-label">⭐ Essencial</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">${stats.byWebhook.premium}</div>
+                    <div class="stat-label">🚨 Premium</div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-value">${stats.byWebhook.highlight}</div>
-                    <div class="stat-label">Highlight</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.midHighlight}</div>
-                    <div class="stat-label">Mid Highlight</div>
+                    <div class="stat-label">💎 Highlight</div>
                 </div>
             </div>
         </div>
@@ -499,24 +521,24 @@ app.get('/', (req, res) => {
             <h2>🔗 URLs dos Webhooks</h2>
             <div class="webhook-list">
                 <div class="webhook-item">
-                    <strong>🟢 Normal (1M - 9M):</strong>
+                    <strong>⭐ Free (>= 1M):</strong>
                     <code>${host}/webhook/normal</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>🟡 Special (10M - 99M):</strong>
+                    <strong>🔥 Básico (>= 10M com Job ID):</strong>
                     <code>${host}/webhook/special</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>🟠 Ultra High (100M - 149M):</strong>
-                    <code>${host}/webhook/ultra-high</code>
-                </div>
-                <div class="webhook-item">
-                    <strong>🔴 Highlight (150M+):</strong>
-                    <code>${host}/webhook/highlight</code>
-                </div>
-                <div class="webhook-item">
-                    <strong>🟣 Mid Highlight (300M+):</strong>
+                    <strong>⭐ Essencial (>= 10M lista):</strong>
                     <code>${host}/webhook/mid-highlight</code>
+                </div>
+                <div class="webhook-item">
+                    <strong>🚨 Premium (>= 50M lista):</strong>
+                    <code>${host}/webhook/premium</code>
+                </div>
+                <div class="webhook-item">
+                    <strong>💎 Highlight (>= 10M SEM Job ID):</strong>
+                    <code>${host}/webhook/highlight</code>
                 </div>
             </div>
         </div>
@@ -536,11 +558,19 @@ app.get('/', (req, res) => {
             <h2>📋 Fila de Jobs (Timeout: 4s)</h2>
             ${jobQueue.length > 0 ? jobQueue.map(j => {
                 const timeLeft = Math.max(0, 4 - Math.floor((Date.now() - j.time) / 1000));
+                const categoryBadge = {
+                    free: '<span class="category-badge badge-free">⭐ FREE</span>',
+                    basico: '<span class="category-badge badge-basico">🔥 BÁSICO</span>',
+                    highlight: '<span class="category-badge badge-highlight">💎 HIGHLIGHT</span>',
+                    essencial: '<span class="category-badge badge-essencial">⭐ ESSENCIAL</span>',
+                    premium: '<span class="category-badge badge-premium">🚨 PREMIUM</span>'
+                }[j.category] || '';
+                
                 return `
                 <div class="queue-item">
                     <div class="timer">⏱️ ${timeLeft}s</div>
-                    <strong>🔥 ${j.name}</strong> <span style="opacity: 0.7;">[${j.category}]</span><br>
-                    <small>Job ID: ${j.jobId}</small><br>
+                    <strong>${j.name}</strong> ${categoryBadge}<br>
+                    <small>Job ID: ${j.jobId || 'N/A (sem Job ID)'}</small><br>
                     <small>Jogadores: ${j.players} | Valor: $${j.value}/s</small>
                 </div>
             `}).join('') : '<div class="queue-empty">Nenhum job na fila</div>'}
@@ -563,6 +593,7 @@ app.get('/status', (req, res) => {
         logs: requestLog.slice(0, 20),
         queue: jobQueue.map(j => ({
             name: j.name,
+            jobId: j.jobId || null,
             players: j.players,
             value: j.value,
             category: j.category,
@@ -584,20 +615,20 @@ setInterval(() => {
 // ===== INICIA SERVIDOR =====
 app.listen(PORT, () => {
     console.log('\n╔════════════════════════════════════════╗');
-    console.log('║   🔥 SERVIDOR AUTO-JOINER ONLINE 🔥   ║');
-    console.log('║     MODE: DEBUG COM TIMEOUT 4s         ║');
+    console.log('║  🔥 CLUFIN NOTIFY AUTO-JOINER 🔥      ║');
+    console.log('║     MODE: PRODUCTION (TIMEOUT 4s)      ║');
     console.log('╚════════════════════════════════════════╝\n');
     console.log(`🌐 Porta: ${PORT}`);
     console.log(`⏱️  Timeout: 4 segundos`);
     console.log(`📥 Webhooks configurados:`);
-    console.log(`   • Normal: /webhook/normal`);
-    console.log(`   • Special: /webhook/special`);
-    console.log(`   • Ultra High: /webhook/ultra-high`);
-    console.log(`   • Highlight: /webhook/highlight`);
-    console.log(`   • Mid Highlight: /webhook/mid-highlight`);
-    console.log(`   • Universal: /discord-webhook`);
+    console.log(`   ⭐ Free: /webhook/normal`);
+    console.log(`   🔥 Básico: /webhook/special`);
+    console.log(`   ⭐ Essencial: /webhook/mid-highlight`);
+    console.log(`   🚨 Premium: /webhook/premium`);
+    console.log(`   💎 Highlight: /webhook/highlight (SEM Job ID)`);
+    console.log(`   🌐 Universal: /discord-webhook`);
     console.log(`📤 API: /get-job`);
     console.log(`📊 Dashboard: /\n`);
     console.log('✅ Aguardando notificações...\n');
-    addLog('success', 'Servidor iniciado com sucesso (Timeout: 4s)');
+    addLog('success', 'Servidor ClufinNotify iniciado com sucesso (Timeout: 4s)');
 });
