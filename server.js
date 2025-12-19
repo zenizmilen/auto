@@ -521,19 +521,19 @@ app.get('/', (req, res) => {
             <h2>🔗 URLs dos Webhooks</h2>
             <div class="webhook-list">
                 <div class="webhook-item">
-                    <strong>⭐ FREE (>= 1M):</strong>
+                    <strong>⭐ FREE (1M - 9.9M):</strong>
                     <code>${host}/webhook/normal</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>🔥 BÁSICO (>= 10M com Job ID):</strong>
+                    <strong>🔥 BÁSICO (10M - 49.9M com Job ID):</strong>
                     <code>${host}/webhook/special</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>⭐ ESSENCIAL (>= 10M lista):</strong>
+                    <strong>⭐ ESSENCIAL (50M - 99.9M):</strong>
                     <code>${host}/webhook/mid-highlight</code>
                 </div>
                 <div class="webhook-item">
-                    <strong>🚨 PREMIUM (>= 50M lista):</strong>
+                    <strong>🚨 PREMIUM (100M - 399.9M):</strong>
                     <code>${host}/webhook/premium</code>
                 </div>
                 <div class="webhook-item">
@@ -621,11 +621,11 @@ app.listen(PORT, () => {
     console.log(`🌐 Porta: ${PORT}`);
     console.log(`⏱️  Timeout: 4 segundos`);
     console.log(`📥 Webhooks configurados:`);
-    console.log(`   ⭐ Free: /webhook/normal`);
-    console.log(`   🔥 Básico: /webhook/special`);
-    console.log(`   ⭐ Essencial: /webhook/mid-highlight`);
-    console.log(`   🚨 Premium: /webhook/premium`);
-    console.log(`   💎 Highlight: /webhook/highlight (SEM Job ID)`);
+    console.log(`   ⭐ FREE: /webhook/normal (1M - 9.9M)`);
+    console.log(`   🔥 BÁSICO: /webhook/special (10M - 49.9M)`);
+    console.log(`   ⭐ ESSENCIAL: /webhook/mid-highlight (50M - 99.9M)`);
+    console.log(`   🚨 PREMIUM: /webhook/premium (100M - 399.9M)`);
+    console.log(`   💎 HIGHLIGHT: /webhook/highlight (>= 10M SEM Job ID)`);
     console.log(`   🌐 Universal: /discord-webhook`);
     console.log(`📤 API: /get-job`);
     console.log(`📊 Dashboard: /\n`);
