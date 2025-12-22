@@ -1,6 +1,4 @@
-// ===== SERVIDOR AUTO-JOINER GRATUITO =====
-// Para usar no Replit.com ou Render.com
-
+// ===== SERVIDOR AUTO-JOINER CORRIGIDO =====
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -39,7 +37,6 @@ function addLog(type, message, data = null) {
     if (data) console.log('   Dados:', JSON.stringify(data, null, 2));
 }
 
-// Middleware para logar TODAS as requisições
 app.use((req, res, next) => {
     addLog('info', `Requisição recebida: ${req.method} ${req.path}`, {
         headers: req.headers,
@@ -48,11 +45,9 @@ app.use((req, res, next) => {
     next();
 });
 
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// CORS
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -79,12 +74,11 @@ let stats = {
     }
 };
 
-// ===== PARSE WEBHOOK DO DISCORD =====
+// ===== PARSE WEBHOOK DO DISCORD - CORRIGIDO =====
 function parseWebhook(body) {
     addLog('info', 'Tentando parsear webhook', { bodyKeys: Object.keys(body) });
     
     try {
-        // Log do corpo completo
         addLog('info', 'Corpo completo recebido', body);
         
         const embeds = body.embeds || [];
@@ -103,44 +97,58 @@ function parseWebhook(body) {
                 fields: embed.fields
             });
             
-            // Tenta extrair do TITLE primeiro (formato: "🔥 Nome do Brainrot" ou "💎 Nome do Brainrot")
+            // Extrai nome do título
             let name = 'Brainrot';
+            let value = '0';
+            
             if (embed.title) {
-                const titleMatch = embed.title.match(/[🔥💎⭐🚨☯️]/);
-                if (titleMatch) {
-                    name = embed.title.replace(/[🔥💎⭐🚨☯️]/g, '').trim();
-                    // Remove " - " e sufixos
-                    name = name.replace(/\s*-\s*.*$/i, '').trim();
-                    // Remove valores /s
-                    name = name.replace(/\s*\d+\.?\d*[KMBT]?\/s.*$/i, '').trim();
+                // Remove emojis e extrai nome
+                let titleClean = embed.title.replace(/[🔥💎⭐🚨☯️]/g, '').trim();
+                
+                // Extrai o valor do título se existir (formato: "Nome $1.5M/s")
+                const titleValueMatch = titleClean.match(/\$([0-9.]+[KMBT]?\/s)/i);
+                if (titleValueMatch) {
+                    value = titleValueMatch[1];
+                    // Remove o valor do nome
+                    name = titleClean.replace(/\$[0-9.]+[KMBT]?\/s/i, '').trim();
+                } else {
+                    name = titleClean;
                 }
             }
             
-            // Extrai Job ID dos FIELDS
+            // Extrai Job ID e Valor dos FIELDS
             let jobId = null;
             let players = 'N/A';
-            let value = '0';
             
             if (embed.fields && Array.isArray(embed.fields)) {
                 for (const field of embed.fields) {
-                    // Procura pelo campo com Job ID
+                    addLog('info', 'Processando field', { name: field.name, value: field.value });
+                    
+                    // Campo de Job ID
                     if (field.name && (field.name.includes('Job ID') || field.name.includes('🌐'))) {
                         const jobMatch = field.value.match(/[`]*([a-f0-9\-]{36})[`]*/);
                         if (jobMatch) {
                             jobId = jobMatch[1];
+                            addLog('success', 'Job ID encontrado', { jobId });
                         }
                     }
                     
-                    // Procura pelo campo de Valor
+                    // Campo de VALOR - CORRIGIDO
                     if (field.name && (field.name.includes('Valor') || field.name.includes('💰'))) {
-                        const valMatch = field.value.match(/\$?([0-9.]+[KMBT]?)/);
+                        // Remove ** (markdown bold), $ e espaços
+                        const cleanValue = field.value.replace(/\*\*/g, '').replace(/\$/g, '').trim();
+                        addLog('info', 'Valor extraído do campo', { raw: field.value, clean: cleanValue });
+                        
+                        // Extrai valor (formato: "1.5M/s" ou "$1.5M/s")
+                        const valMatch = cleanValue.match(/([0-9.]+[KMBT]?\/s)/i);
                         if (valMatch) {
                             value = valMatch[1];
+                            addLog('success', 'Valor parseado', { value });
                         }
                     }
                     
-                    // Procura jogadores no campo "Players" ou "Informações do Server"
-                    if (field.name && (field.name.includes('Players') || field.name.includes('👥') || field.name.includes('Informações'))) {
+                    // Campo de Players
+                    if (field.name && (field.name.includes('Players') || field.name.includes('👥'))) {
                         const playMatch = field.value.match(/(\d+)\/(\d+)/);
                         if (playMatch) {
                             players = `${playMatch[1]}/${playMatch[2]}`;
@@ -149,24 +157,24 @@ function parseWebhook(body) {
                 }
             }
             
-            // Se não achou nos fields, tenta na description
-            if (!jobId) {
-                const desc = embed.description || '';
-                const jobMatch = desc.match(/[`]*([a-f0-9\-]{36})[`]*/);
-                if (jobMatch) {
-                    jobId = jobMatch[1];
+            // Se não encontrou valor nos fields, tenta extrair da description
+            if (value === '0' && embed.description) {
+                const descValueMatch = embed.description.match(/\$?([0-9.]+[KMBT]?\/s)/i);
+                if (descValueMatch) {
+                    value = descValueMatch[1];
+                    addLog('success', 'Valor extraído da description', { value });
                 }
             }
             
-            // Para Highlight, não precisa de Job ID (pode ser null)
+            // Para Highlight pode não ter Job ID
             if (jobId || name !== 'Brainrot') {
-                addLog('success', 'Job parseado com sucesso', { jobId: jobId || 'N/A (Highlight)', name, players, value });
-                return { jobId: jobId || null, name, players, value, time: Date.now() };
-            } else {
-                addLog('warning', 'Job ID não encontrado no embed', { 
-                    title: embed.title,
-                    fields: embed.fields 
+                addLog('success', 'Job parseado com sucesso', { 
+                    jobId: jobId || 'N/A (Highlight)', 
+                    name, 
+                    players, 
+                    value 
                 });
+                return { jobId: jobId || null, name, players, value, time: Date.now() };
             }
         }
         
@@ -190,11 +198,12 @@ function scheduleJobRemoval(job) {
             stats.totalExpired++;
             addLog('warning', `Job removido por timeout (4s)`, {
                 name: job.name,
+                value: job.value,
                 jobId: job.jobId || 'N/A',
                 category: job.category
             });
         }
-    }, 4000); // 4 segundos
+    }, 4000);
 }
 
 // ===== FUNÇÃO GENÉRICA PARA PROCESSAR WEBHOOKS =====
@@ -207,7 +216,6 @@ function processWebhook(req, res, category) {
     const job = parseWebhook(req.body);
     
     if (job) {
-        // Para Highlight, não verifica duplicata por Job ID (pode não ter)
         let isDupe = false;
         if (category !== 'highlight') {
             isDupe = jobQueue.some(j => 
@@ -222,14 +230,13 @@ function processWebhook(req, res, category) {
             stats.byWebhook[category]++;
             stats.lastUpdate = new Date().toISOString();
             
-            // Agenda remoção automática após 4 segundos
             scheduleJobRemoval(job);
             
-            addLog('success', `[${category.toUpperCase()}] Job adicionado à fila (será removido em 4s)`, {
+            addLog('success', `[${category.toUpperCase()}] Job adicionado à fila`, {
                 name: job.name,
-                jobId: job.jobId || 'N/A (sem Job ID)',
-                players: job.players,
                 value: job.value,
+                jobId: job.jobId || 'N/A',
+                players: job.players,
                 queueSize: jobQueue.length
             });
         } else {
@@ -255,14 +262,17 @@ app.post('/discord-webhook', (req, res) => processWebhook(req, res, 'universal')
 
 // ===== ROBLOX PEGA JOB =====
 app.get('/get-job', (req, res) => {
-    // Remove jobs que já expiraram (mais de 4 segundos)
     jobQueue = jobQueue.filter(j => (Date.now() - j.time) < 4000);
     
     if (jobQueue.length > 0) {
         const job = jobQueue.shift();
         stats.totalProcessed++;
         
-        addLog('success', 'Job enviado para Roblox', { name: job.name, jobId: job.jobId || 'N/A' });
+        addLog('success', 'Job enviado para Roblox', { 
+            name: job.name, 
+            value: job.value,
+            jobId: job.jobId || 'N/A' 
+        });
         
         return res.json({
             success: true,
@@ -281,7 +291,7 @@ app.get('/get-job', (req, res) => {
     res.json({ success: false, message: 'Nenhum job disponível' });
 });
 
-// ===== DASHBOARD COM LOGS =====
+// ===== DASHBOARD =====
 app.get('/', (req, res) => {
     const host = `${req.protocol}://${req.get('host')}`;
     res.send(`
@@ -343,48 +353,15 @@ app.get('/', (req, res) => {
             font-size: 0.9em;
             opacity: 0.8;
         }
-        .webhook-list { margin-top: 15px; }
-        .webhook-item {
-            background: rgba(255,255,255,0.1);
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            font-size: 0.85em;
+        .online-badge {
+            display: inline-block;
+            background: #4ade80;
+            color: #065f46;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
         }
-        .webhook-item strong {
-            display: block;
-            margin-bottom: 5px;
-            color: #fbbf24;
-        }
-        code {
-            background: rgba(0,0,0,0.3);
-            padding: 3px 8px;
-            border-radius: 5px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.85em;
-            word-break: break-all;
-        }
-        .logs {
-            background: rgba(0,0,0,0.4);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 25px;
-            max-height: 500px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 0.85em;
-        }
-        .log-item {
-            padding: 10px;
-            margin-bottom: 8px;
-            border-radius: 5px;
-            border-left: 4px solid;
-        }
-        .log-success { background: rgba(34,197,94,0.2); border-color: #22c55e; }
-        .log-error { background: rgba(239,68,68,0.2); border-color: #ef4444; }
-        .log-warning { background: rgba(251,191,36,0.2); border-color: #fbbf24; }
-        .log-info { background: rgba(59,130,246,0.2); border-color: #3b82f6; }
-        .log-time { opacity: 0.6; font-size: 0.9em; }
         .queue {
             background: rgba(255,255,255,0.1);
             backdrop-filter: blur(10px);
@@ -410,49 +387,11 @@ app.get('/', (req, res) => {
             font-size: 0.85em;
             font-weight: bold;
         }
-        .queue-empty {
-            text-align: center;
-            opacity: 0.6;
-            padding: 40px;
-        }
-        .online-badge {
-            display: inline-block;
-            background: #4ade80;
-            color: #065f46;
-            padding: 5px 15px;
-            border-radius: 20px;
+        .value-highlight {
+            color: #4ade80;
             font-weight: bold;
-            font-size: 0.9em;
+            font-size: 1.1em;
         }
-        .badge-failed {
-            background: #ef4444;
-            color: white;
-            padding: 3px 8px;
-            border-radius: 5px;
-            font-size: 0.85em;
-            margin-left: 10px;
-        }
-        .timeout-warning {
-            background: rgba(251,191,36,0.2);
-            border: 2px solid #fbbf24;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        .category-badge {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 5px;
-            font-size: 0.85em;
-            font-weight: bold;
-            margin-left: 8px;
-        }
-        .badge-free { background: rgba(91, 134, 229, 0.3); color: #93c5fd; }
-        .badge-basico { background: rgba(251, 113, 33, 0.3); color: #fb923c; }
-        .badge-highlight { background: rgba(155, 89, 182, 0.3); color: #c084fc; }
-        .badge-essencial { background: rgba(251, 191, 36, 0.3); color: #fbbf24; }
-        .badge-premium { background: rgba(239, 68, 68, 0.3); color: #ef4444; }
     </style>
 </head>
 <body>
@@ -460,11 +399,6 @@ app.get('/', (req, res) => {
         <div class="header">
             <h1>🔥 ClufinNotify Auto-Joiner</h1>
             <span class="online-badge">● ONLINE</span>
-            ${stats.totalFailed > 0 ? `<span class="badge-failed">${stats.totalFailed} Falhas</span>` : ''}
-        </div>
-        
-        <div class="timeout-warning">
-            ⏱️ <strong>Jobs são removidos automaticamente após 4 segundos na fila</strong>
         </div>
         
         <div class="status">
@@ -483,97 +417,25 @@ app.get('/', (req, res) => {
                     <div class="stat-label">Expirados</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-value">${stats.totalFailed}</div>
-                    <div class="stat-label">Falhados</div>
-                </div>
-                <div class="stat-item">
                     <div class="stat-value">${jobQueue.length}</div>
                     <div class="stat-label">Na Fila</div>
                 </div>
             </div>
-            
-            <h3 style="margin-top: 20px; margin-bottom: 10px;">📈 Por Categoria</h3>
-            <div class="stat-grid">
-                <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.free}</div>
-                    <div class="stat-label">⭐ FREE</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.basico}</div>
-                    <div class="stat-label">🔥 BÁSICO</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.essencial}</div>
-                    <div class="stat-label">⭐ ESSENCIAL</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.premium}</div>
-                    <div class="stat-label">🚨 PREMIUM</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-value">${stats.byWebhook.highlight}</div>
-                    <div class="stat-label">💎 HIGHLIGHT</div>
-                </div>
-            </div>
         </div>
         
-        <div class="status">
-            <h2>🔗 URLs dos Webhooks</h2>
-            <div class="webhook-list">
-                <div class="webhook-item">
-                    <strong>⭐ FREE (1M - 9.9M):</strong>
-                    <code>${host}/webhook/normal</code>
-                </div>
-                <div class="webhook-item">
-                    <strong>🔥 BÁSICO (10M - 49.9M com Job ID):</strong>
-                    <code>${host}/webhook/special</code>
-                </div>
-                <div class="webhook-item">
-                    <strong>⭐ ESSENCIAL (50M - 99.9M):</strong>
-                    <code>${host}/webhook/mid-highlight</code>
-                </div>
-                <div class="webhook-item">
-                    <strong>🚨 PREMIUM (100M - 399.9M):</strong>
-                    <code>${host}/webhook/premium</code>
-                </div>
-                <div class="webhook-item">
-                    <strong>💎 HIGHLIGHT (>= 10M SEM Job ID):</strong>
-                    <code>${host}/webhook/highlight</code>
-                </div>
-            </div>
-        </div>
-        
-        <div class="logs">
-            <h2 style="margin-bottom: 15px;">📝 Logs em Tempo Real</h2>
-            ${requestLog.length > 0 ? requestLog.map(log => `
-                <div class="log-item log-${log.type}">
-                    <span class="log-time">${new Date(log.time).toLocaleTimeString('pt-BR')}</span>
-                    <div>${log.message}</div>
-                    ${log.data ? `<pre style="margin-top: 5px; opacity: 0.8; font-size: 0.9em;">${JSON.stringify(log.data, null, 2)}</pre>` : ''}
-                </div>
-            `).join('') : '<div style="text-align: center; opacity: 0.6;">Nenhum log ainda...</div>'}
-        </div>
-        
-        <div class="queue" style="margin-top: 20px;">
+        <div class="queue">
             <h2>📋 Fila de Jobs (Timeout: 4s)</h2>
             ${jobQueue.length > 0 ? jobQueue.map(j => {
                 const timeLeft = Math.max(0, 4 - Math.floor((Date.now() - j.time) / 1000));
-                const categoryBadge = {
-                    free: '<span class="category-badge badge-free">⭐ FREE</span>',
-                    basico: '<span class="category-badge badge-basico">🔥 BÁSICO</span>',
-                    highlight: '<span class="category-badge badge-highlight">💎 HIGHLIGHT</span>',
-                    essencial: '<span class="category-badge badge-essencial">⭐ ESSENCIAL</span>',
-                    premium: '<span class="category-badge badge-premium">🚨 PREMIUM</span>'
-                }[j.category] || '';
-                
                 return `
                 <div class="queue-item">
                     <div class="timer">⏱️ ${timeLeft}s</div>
-                    <strong>${j.name}</strong> ${categoryBadge}<br>
-                    <small>Job ID: ${j.jobId || 'N/A (sem Job ID)'}</small><br>
-                    <small>Jogadores: ${j.players} | Valor: $${j.value}/s</small>
+                    <strong>${j.name}</strong><br>
+                    <span class="value-highlight">💰 $${j.value}</span><br>
+                    <small>Job ID: ${j.jobId || 'N/A'}</small><br>
+                    <small>Jogadores: ${j.players}</small>
                 </div>
-            `}).join('') : '<div class="queue-empty">Nenhum job na fila</div>'}
+            `}).join('') : '<div style="text-align: center; opacity: 0.6; padding: 40px;">Nenhum job na fila</div>'}
         </div>
     </div>
     
@@ -585,24 +447,6 @@ app.get('/', (req, res) => {
     `);
 });
 
-app.get('/status', (req, res) => {
-    res.json({
-        online: true,
-        queueSize: jobQueue.length,
-        stats: stats,
-        logs: requestLog.slice(0, 20),
-        queue: jobQueue.map(j => ({
-            name: j.name,
-            jobId: j.jobId || null,
-            players: j.players,
-            value: j.value,
-            category: j.category,
-            time: new Date(j.time).toISOString(),
-            timeLeft: Math.max(0, 4 - Math.floor((Date.now() - j.time) / 1000))
-        }))
-    });
-});
-
 // ===== LIMPA JOBS ANTIGOS =====
 setInterval(() => {
     const before = jobQueue.length;
@@ -610,25 +454,16 @@ setInterval(() => {
     if (before > jobQueue.length) {
         addLog('info', `Limpeza automática: ${before - jobQueue.length} jobs expirados removidos`);
     }
-}, 1000); // Verifica a cada 1 segundo
+}, 1000);
 
 // ===== INICIA SERVIDOR =====
 app.listen(PORT, () => {
     console.log('\n╔════════════════════════════════════════╗');
     console.log('║  🔥 CLUFIN NOTIFY AUTO-JOINER 🔥      ║');
-    console.log('║     MODE: PRODUCTION (TIMEOUT 4s)      ║');
+    console.log('║     VALOR CORRIGIDO - V2.0             ║');
     console.log('╚════════════════════════════════════════╝\n');
     console.log(`🌐 Porta: ${PORT}`);
     console.log(`⏱️  Timeout: 4 segundos`);
-    console.log(`📥 Webhooks configurados:`);
-    console.log(`   ⭐ FREE: /webhook/normal (1M - 9.9M)`);
-    console.log(`   🔥 BÁSICO: /webhook/special (10M - 49.9M)`);
-    console.log(`   ⭐ ESSENCIAL: /webhook/mid-highlight (50M - 99.9M)`);
-    console.log(`   🚨 PREMIUM: /webhook/premium (100M - 399.9M)`);
-    console.log(`   💎 HIGHLIGHT: /webhook/highlight (>= 10M SEM Job ID)`);
-    console.log(`   🌐 Universal: /discord-webhook`);
-    console.log(`📤 API: /get-job`);
-    console.log(`📊 Dashboard: /\n`);
-    console.log('✅ Aguardando notificações...\n');
-    addLog('success', 'Servidor ClufinNotify iniciado com sucesso (Timeout: 4s)');
+    console.log(`✅ Servidor iniciado com sucesso!\n`);
+    addLog('success', 'Servidor ClufinNotify V2.0 iniciado (Correção de Valor)');
 });
