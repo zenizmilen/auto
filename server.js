@@ -429,22 +429,22 @@ async function processWebhook(req, res, category) {
 // ===== ENDPOINTS =====
 
 // Webhook genérico (PRIMEIRO, para pegar tudo)
-app.post('/webhook', (req, res) => {
+app.post('/webhook', async (req, res) => {
     addLog('info', '📨 Webhook genérico /webhook');
-    processWebhook(req, res, 'free');
+    await processWebhook(req, res, 'free');
 });
 
-app.post('/discord-webhook', (req, res) => {
+app.post('/discord-webhook', async (req, res) => {
     addLog('info', '📨 Webhook /discord-webhook');
-    processWebhook(req, res, 'free');
+    await processWebhook(req, res, 'free');
 });
 
 // Webhooks específicos
-app.post('/webhook/normal', (req, res) => processWebhook(req, res, 'free'));
-app.post('/webhook/special', (req, res) => processWebhook(req, res, 'basico'));
-app.post('/webhook/highlight', (req, res) => processWebhook(req, res, 'highlight'));
-app.post('/webhook/premium', (req, res) => processWebhook(req, res, 'premium'));
-app.post('/webhook/mid-highlight', (req, res) => processWebhook(req, res, 'essencial'));
+app.post('/webhook/normal', async (req, res) => await processWebhook(req, res, 'free'));
+app.post('/webhook/special', async (req, res) => await processWebhook(req, res, 'basico'));
+app.post('/webhook/highlight', async (req, res) => await processWebhook(req, res, 'highlight'));
+app.post('/webhook/premium', async (req, res) => await processWebhook(req, res, 'premium'));
+app.post('/webhook/mid-highlight', async (req, res) => await processWebhook(req, res, 'essencial'));
 
 // Pegar job
 app.get('/get-job', (req, res) => {
