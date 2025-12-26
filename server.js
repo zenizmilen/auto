@@ -155,15 +155,24 @@ function parseWebhook(body) {
                     .replace(/[🔥💎⭐🚨☯️\*]/g, '')
                     .trim();
                 
-                // Extrai valor (ex: $1.5K/s, 1.5K/s)
-                const valueMatch = titleClean.match(/\$?([0-9.]+[KMBT]?\/s)/i);
+                // Extrai valor (ex: $1.5K/s, 1.5K/s, $10M/s)
+                // IMPORTANTE: Captura o $ se existir
+                const valueMatch = titleClean.match(/(\$[0-9.]+[KMBT]?\/s)/i);
                 if (valueMatch) {
-                    value = valueMatch[1];
-                    name = titleClean.replace(/\$?[0-9.]+[KMBT]?\/s/i, '').trim();
+                    value = valueMatch[1]; // Mantém o $
+                    name = titleClean.replace(/\$[0-9.]+[KMBT]?\/s/i, '').trim();
                     addLog('success', '✅ Extraído do título', { name, value });
                 } else {
-                    name = titleClean;
-                    addLog('info', 'ℹ️ Título sem valor monetário', { name });
+                    // Tenta sem $
+                    const valueMatch2 = titleClean.match(/([0-9.]+[KMBT]?\/s)/i);
+                    if (valueMatch2) {
+                        value = valueMatch2[1];
+                        name = titleClean.replace(/[0-9.]+[KMBT]?\/s/i, '').trim();
+                        addLog('success', '✅ Extraído do título (sem $)', { name, value });
+                    } else {
+                        name = titleClean;
+                        addLog('info', 'ℹ️ Título sem valor monetário', { name });
+                    }
                 }
             }
             
@@ -223,7 +232,22 @@ function parseWebhook(body) {
                 }
             }
             
-            // VALIDAÇÃO FINAL
+            // ===== FALLBACK: BUSCA VALOR EM QUALQUER LUGAR =====
+            if (value === '0') {
+                addLog('warning', '⚠️ Valor ainda é 0, tentando fallback...');
+                
+                // Junta tudo do embed numa string só
+                const embedString = JSON.stringify(embed);
+                
+                // Procura por padrões de valor ($10M/s, 50K/s, etc)
+                const fallbackMatch = embedString.match(/(\$?[0-9.]+[KMBT]\/s)/i);
+                if (fallbackMatch) {
+                    value = fallbackMatch[1];
+                    addLog('success', '✅ Valor encontrado via fallback', { value });
+                }
+            }
+            
+            // ===== VALIDAÇÃO FINAL =====
             const isValid = jobId || name !== 'Unknown';
             
             if (isValid) {
@@ -270,9 +294,83 @@ function scheduleJobRemoval(job) {
     }, JOB_TIMEOUT);
 }
 
+// ===== REENVIAR PARA DISCORD =====
+async function reenviarParaDiscord(body, category) {
+    const WEBHOOKS = {
+        free: "https://discord.com/api/webhooks/1451031458612252704/Oo1K9KNcTSRbRFcSTlveMyNnMA2DOKFATnYKSI8Q-RvMBPI5ZnqF0dRkjKgGHq7o5c1D",
+        basico: "https://discord.com/api/webhooks/1449966669005848668/QAjwTBI7Erv6mZr5hTvsX3Ctgwofoboj7bZZot4v02f6TiGQJustRdsd_ax0vgCo9NTU",
+        highlight: "https://discord.com/api/webhooks/1451031692927041678/Pwu3TLXC61aPFcXkz7xnz8P0hoq_vyI2z2-f9t6nSqQ5ncM7A4JsbplrBiDCMjDOKGTl",
+        premium: "https://discord.com/api/webhooks/1451031769687134292/ZCdEm84p2TJPAztbpFUc0ovMRS8l97D9ZX9_70zBKCGHY_xufru7yySP5oyqRxpzmkBj",
+        essencial: "https://discord.com/api/webhooks/1450158161959850086/E8uoVdUtw6qYnUi57zJEbAADvQ5OFXUdMGkR1cPu3934jA-Gm3jCvdbbEJhBbDROLHIf"
+    };
+    
+    const webhookUrl = WEBHOOKS[category];
+    
+    if (!webhookUrl) {
+        addLog('error', '❌ Webhook URL não encontrado', { category });
+        return false;
+    }
+    
+    try {
+        addLog('info', `📤 Reenviando para Discord [${category.toUpperCase()}]`);
+        
+        const https = require('https');
+        const url = require('url');
+        const parsedUrl = url.parse(webhookUrl);
+        
+        const postData = JSON.stringify(body);
+        
+        const options = {
+            hostname: parsedUrl.hostname,
+            port: 443,
+            path: parsedUrl.path,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            }
+        };
+        
+        return new Promise((resolve) => {
+            const req = https.request(options, (res) => {
+                let data = '';
+                
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                
+                res.on('end', () => {
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                        addLog('success', `✅ Webhook Discord enviado [${category.toUpperCase()}]`);
+                        resolve(true);
+                    } else {
+                        addLog('error', `❌ Erro Discord: ${res.statusCode}`, { body: data });
+                        resolve(false);
+                    }
+                });
+            });
+            
+            req.on('error', (error) => {
+                addLog('error', '❌ Erro ao enviar Discord', { error: error.message });
+                resolve(false);
+            });
+            
+            req.write(postData);
+            req.end();
+        });
+        
+    } catch (error) {
+        addLog('error', '❌ Erro ao enviar Discord', { error: error.message });
+        return false;
+    }
+}
+
 // ===== PROCESSAR WEBHOOK =====
-function processWebhook(req, res, category) {
+async function processWebhook(req, res, category) {
     addLog('info', `📥 PROCESSANDO WEBHOOK [${category.toUpperCase()}]`);
+    
+    // ===== REENVIAR PARA DISCORD IMEDIATAMENTE =====
+    reenviarParaDiscord(req.body, category);
     
     const job = parseWebhook(req.body);
     
