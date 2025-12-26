@@ -1,4 +1,4 @@
-// ===== SERVIDOR AUTO-JOINER CORRIGIDO =====
+// ===== SERVIDOR AUTO-JOINER V3.0 - TIMEOUT MELHORADO =====
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,6 +11,10 @@ const WEBHOOKS = {
     premium: "https://discord.com/api/webhooks/1451031769687134292/ZCdEm84p2TJPAztbpFUc0ovMRS8l97D9ZX9_70zBKCGHY_xufru7yySP5oyqRxpzmkBj",
     essencial: "https://discord.com/api/webhooks/1450158161959850086/E8uoVdUtw6qYnUi57zJEbAADvQ5OFXUdMGkR1cPu3934jA-Gm3jCvdbbEJhBbDROLHIf"
 };
+
+// ===== CONFIGURAÇÃO =====
+const JOB_TIMEOUT = 15000; // 15 segundos
+const DUPLICATE_WINDOW = 60000; // 1 minuto para considerar duplicado
 
 // ===== LOGS DETALHADOS =====
 let requestLog = [];
@@ -38,7 +42,7 @@ function addLog(type, message, data = null) {
 }
 
 app.use((req, res, next) => {
-    addLog('info', `Requisição recebida: ${req.method} ${req.path}`, {
+    addLog('info', `Requisição: ${req.method} ${req.path}`, {
         headers: req.headers,
         ip: req.ip
     });
@@ -74,80 +78,61 @@ let stats = {
     }
 };
 
-// ===== PARSE WEBHOOK DO DISCORD - CORRIGIDO =====
+// ===== PARSE WEBHOOK DO DISCORD =====
 function parseWebhook(body) {
-    addLog('info', 'Tentando parsear webhook', { bodyKeys: Object.keys(body) });
+    addLog('info', 'Tentando parsear webhook');
     
     try {
-        addLog('info', 'Corpo completo recebido', body);
-        
         const embeds = body.embeds || [];
         addLog('info', `Encontrados ${embeds.length} embeds`);
         
         if (embeds.length === 0) {
-            addLog('warning', 'Nenhum embed encontrado no webhook');
+            addLog('warning', 'Nenhum embed encontrado');
             return null;
         }
         
         for (let i = 0; i < embeds.length; i++) {
             const embed = embeds[i];
-            addLog('info', `Processando embed ${i}`, { 
-                title: embed.title,
-                description: embed.description?.substring(0, 100),
-                fields: embed.fields
-            });
             
-            // Extrai nome do título
             let name = 'Brainrot';
             let value = '0';
             
             if (embed.title) {
-                // Remove emojis e extrai nome
                 let titleClean = embed.title.replace(/[🔥💎⭐🚨☯️]/g, '').trim();
-                
-                // Extrai o valor do título se existir (formato: "Nome $1.5M/s")
                 const titleValueMatch = titleClean.match(/\$([0-9.]+[KMBT]?\/s)/i);
                 if (titleValueMatch) {
                     value = titleValueMatch[1];
-                    // Remove o valor do nome
                     name = titleClean.replace(/\$[0-9.]+[KMBT]?\/s/i, '').trim();
                 } else {
                     name = titleClean;
                 }
             }
             
-            // Extrai Job ID e Valor dos FIELDS
             let jobId = null;
             let players = 'N/A';
             
             if (embed.fields && Array.isArray(embed.fields)) {
                 for (const field of embed.fields) {
-                    addLog('info', 'Processando field', { name: field.name, value: field.value });
-                    
-                    // Campo de Job ID
+                    // Job ID
                     if (field.name && (field.name.includes('Job ID') || field.name.includes('🌐'))) {
                         const jobMatch = field.value.match(/[`]*([a-f0-9\-]{36})[`]*/);
                         if (jobMatch) {
                             jobId = jobMatch[1];
-                            addLog('success', 'Job ID encontrado', { jobId });
+                            addLog('success', '🔑 Job ID extraído', { jobId });
                         }
                     }
                     
-                    // Campo de VALOR - CORRIGIDO
+                    // Valor
                     if (field.name && (field.name.includes('Valor') || field.name.includes('💰'))) {
-                        // Remove ** (markdown bold), $ e espaços
                         const cleanValue = field.value.replace(/\*\*/g, '').replace(/\$/g, '').trim();
-                        addLog('info', 'Valor extraído do campo', { raw: field.value, clean: cleanValue });
-                        
-                        // Extrai valor (formato: "1.5M/s" ou "$1.5M/s")
                         const valMatch = cleanValue.match(/([0-9.]+[KMBT]?\/s)/i);
                         if (valMatch) {
                             value = valMatch[1];
-                            addLog('success', 'Valor parseado', { value });
+                            addLog('success', '💰 Valor extraído', { value });
                         }
                     }
                     
-                    // Campo de Players
+                    // Players
                     if (field.name && (field.name.includes('Players') || field.name.includes('👥'))) {
                         const playMatch = field.value.match(/(\d+)\/(\d+)/);
                         if (playMatch) {
@@ -157,19 +142,17 @@ function parseWebhook(body) {
                 }
             }
             
-            // Se não encontrou valor nos fields, tenta extrair da description
             if (value === '0' && embed.description) {
                 const descValueMatch = embed.description.match(/\$?([0-9.]+[KMBT]?\/s)/i);
                 if (descValueMatch) {
                     value = descValueMatch[1];
-                    addLog('success', 'Valor extraído da description', { value });
                 }
             }
             
-            // Para Highlight pode não ter Job ID
+            // ✅ ACEITA JOBS SEM JOB ID (para Highlight)
             if (jobId || name !== 'Brainrot') {
-                addLog('success', 'Job parseado com sucesso', { 
-                    jobId: jobId || 'N/A (Highlight)', 
+                addLog('success', '✅ Job parseado', { 
+                    jobId: jobId || 'N/A', 
                     name, 
                     players, 
                     value 
@@ -178,15 +161,15 @@ function parseWebhook(body) {
             }
         }
         
-        addLog('error', 'Nenhum job válido encontrado nos embeds');
+        addLog('error', 'Nenhum job válido encontrado');
         return null;
     } catch (e) {
-        addLog('error', 'Erro ao parsear webhook', { error: e.message, stack: e.stack });
+        addLog('error', 'Erro ao parsear webhook', { error: e.message });
         return null;
     }
 }
 
-// ===== FUNÇÃO PARA REMOVER JOB APÓS 4 SEGUNDOS =====
+// ===== REMOVER JOB APÓS TIMEOUT =====
 function scheduleJobRemoval(job) {
     setTimeout(() => {
         const index = jobQueue.findIndex(j => 
@@ -196,30 +179,27 @@ function scheduleJobRemoval(job) {
         if (index !== -1) {
             jobQueue.splice(index, 1);
             stats.totalExpired++;
-            addLog('warning', `Job removido por timeout (4s)`, {
+            addLog('warning', `⏱️ Job expirado (${JOB_TIMEOUT/1000}s)`, {
                 name: job.name,
                 value: job.value,
-                jobId: job.jobId || 'N/A',
-                category: job.category
+                jobId: job.jobId || 'N/A'
             });
         }
-    }, 4000);
+    }, JOB_TIMEOUT);
 }
 
-// ===== FUNÇÃO GENÉRICA PARA PROCESSAR WEBHOOKS =====
+// ===== PROCESSAR WEBHOOK =====
 function processWebhook(req, res, category) {
-    addLog('info', `Processando webhook ${category}`, {
-        contentType: req.headers['content-type'],
-        bodySize: JSON.stringify(req.body).length
-    });
+    addLog('info', `📥 Processando webhook ${category}`);
     
     const job = parseWebhook(req.body);
     
     if (job) {
+        // Verifica duplicados (só para jobs COM Job ID)
         let isDupe = false;
-        if (category !== 'highlight') {
+        if (job.jobId && category !== 'highlight') {
             isDupe = jobQueue.some(j => 
-                j.jobId === job.jobId && job.jobId !== null && (Date.now() - j.time) < 300000
+                j.jobId === job.jobId && (Date.now() - j.time) < DUPLICATE_WINDOW
             );
         }
         
@@ -232,46 +212,50 @@ function processWebhook(req, res, category) {
             
             scheduleJobRemoval(job);
             
-            addLog('success', `[${category.toUpperCase()}] Job adicionado à fila`, {
+            addLog('success', `✅ [${category.toUpperCase()}] Job adicionado`, {
                 name: job.name,
                 value: job.value,
                 jobId: job.jobId || 'N/A',
-                players: job.players,
-                queueSize: jobQueue.length
+                queueSize: jobQueue.length,
+                timeout: `${JOB_TIMEOUT/1000}s`
             });
         } else {
-            addLog('warning', 'Job duplicado ignorado', { jobId: job.jobId });
+            addLog('warning', '⚠️ Job duplicado ignorado', { jobId: job.jobId });
         }
     } else {
         stats.totalFailed++;
-        addLog('error', 'Falha ao processar webhook - job inválido');
+        addLog('error', '❌ Falha ao processar webhook');
     }
     
     res.status(200).send('OK');
 }
 
-// ===== ENDPOINTS INDIVIDUAIS =====
+// ===== ENDPOINTS =====
 app.post('/webhook/normal', (req, res) => processWebhook(req, res, 'free'));
 app.post('/webhook/special', (req, res) => processWebhook(req, res, 'basico'));
 app.post('/webhook/highlight', (req, res) => processWebhook(req, res, 'highlight'));
 app.post('/webhook/premium', (req, res) => processWebhook(req, res, 'premium'));
 app.post('/webhook/mid-highlight', (req, res) => processWebhook(req, res, 'essencial'));
-
-// ===== ENDPOINT UNIVERSAL =====
 app.post('/discord-webhook', (req, res) => processWebhook(req, res, 'universal'));
 
 // ===== ROBLOX PEGA JOB =====
 app.get('/get-job', (req, res) => {
-    jobQueue = jobQueue.filter(j => (Date.now() - j.time) < 4000);
+    // Remove apenas jobs REALMENTE expirados
+    jobQueue = jobQueue.filter(j => (Date.now() - j.time) < JOB_TIMEOUT);
     
     if (jobQueue.length > 0) {
+        // Ordena por prioridade: Premium > Essencial > Highlight > Básico > Free
+        const priority = { premium: 5, essencial: 4, highlight: 3, basico: 2, free: 1 };
+        jobQueue.sort((a, b) => (priority[b.category] || 0) - (priority[a.category] || 0));
+        
         const job = jobQueue.shift();
         stats.totalProcessed++;
         
-        addLog('success', 'Job enviado para Roblox', { 
+        addLog('success', '🚀 Job enviado para Roblox', { 
             name: job.name, 
             value: job.value,
-            jobId: job.jobId || 'N/A' 
+            jobId: job.jobId || 'N/A',
+            category: job.category
         });
         
         return res.json({
@@ -293,14 +277,13 @@ app.get('/get-job', (req, res) => {
 
 // ===== DASHBOARD =====
 app.get('/', (req, res) => {
-    const host = `${req.protocol}://${req.get('host')}`;
     res.send(`
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brainrot Auto-Joiner - ClufinNotify</title>
+    <title>Brainrot Auto-Joiner V3.0</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -367,7 +350,7 @@ app.get('/', (req, res) => {
             backdrop-filter: blur(10px);
             border-radius: 15px;
             padding: 25px;
-            max-height: 400px;
+            max-height: 500px;
             overflow-y: auto;
         }
         .queue-item {
@@ -392,13 +375,27 @@ app.get('/', (req, res) => {
             font-weight: bold;
             font-size: 1.1em;
         }
+        .category-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        .premium { background: #fbbf24; color: #78350f; }
+        .essencial { background: #f97316; color: #7c2d12; }
+        .highlight { background: #a855f7; color: #581c87; }
+        .basico { background: #ef4444; color: #7f1d1d; }
+        .free { background: #3b82f6; color: #1e3a8a; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔥 ClufinNotify Auto-Joiner</h1>
+            <h1>🔥 ClufinNotify Auto-Joiner V3.0</h1>
             <span class="online-badge">● ONLINE</span>
+            <p style="margin-top: 10px; opacity: 0.8;">Timeout: ${JOB_TIMEOUT/1000}s | Duplicados: ${DUPLICATE_WINDOW/1000}s</p>
         </div>
         
         <div class="status">
@@ -424,13 +421,14 @@ app.get('/', (req, res) => {
         </div>
         
         <div class="queue">
-            <h2>📋 Fila de Jobs (Timeout: 4s)</h2>
+            <h2>📋 Fila de Jobs</h2>
             ${jobQueue.length > 0 ? jobQueue.map(j => {
-                const timeLeft = Math.max(0, 4 - Math.floor((Date.now() - j.time) / 1000));
+                const timeLeft = Math.max(0, Math.floor((JOB_TIMEOUT - (Date.now() - j.time)) / 1000));
                 return `
                 <div class="queue-item">
                     <div class="timer">⏱️ ${timeLeft}s</div>
-                    <strong>${j.name}</strong><br>
+                    <strong>${j.name}</strong>
+                    <span class="category-badge ${j.category}">${j.category.toUpperCase()}</span><br>
                     <span class="value-highlight">💰 $${j.value}</span><br>
                     <small>Job ID: ${j.jobId || 'N/A'}</small><br>
                     <small>Jogadores: ${j.players}</small>
@@ -440,30 +438,31 @@ app.get('/', (req, res) => {
     </div>
     
     <script>
-        setTimeout(() => location.reload(), 1000);
+        setTimeout(() => location.reload(), 2000);
     </script>
 </body>
 </html>
     `);
 });
 
-// ===== LIMPA JOBS ANTIGOS =====
+// ===== LIMPEZA AUTOMÁTICA =====
 setInterval(() => {
     const before = jobQueue.length;
-    jobQueue = jobQueue.filter(j => (Date.now() - j.time) < 4000);
+    jobQueue = jobQueue.filter(j => (Date.now() - j.time) < JOB_TIMEOUT);
     if (before > jobQueue.length) {
-        addLog('info', `Limpeza automática: ${before - jobQueue.length} jobs expirados removidos`);
+        addLog('info', `🧹 Limpeza: ${before - jobQueue.length} jobs expirados`);
     }
-}, 1000);
+}, 10000); // A cada 10 segundos
 
 // ===== INICIA SERVIDOR =====
 app.listen(PORT, () => {
     console.log('\n╔════════════════════════════════════════╗');
-    console.log('║  🔥 CLUFIN NOTIFY AUTO-JOINER 🔥      ║');
-    console.log('║     VALOR CORRIGIDO - V2.0             ║');
+    console.log('║  🔥 CLUFIN NOTIFY AUTO-JOINER V3.0 🔥 ║');
+    console.log('║     TIMEOUT OTIMIZADO - 15s            ║');
     console.log('╚════════════════════════════════════════╝\n');
     console.log(`🌐 Porta: ${PORT}`);
-    console.log(`⏱️  Timeout: 4 segundos`);
-    console.log(`✅ Servidor iniciado com sucesso!\n`);
-    addLog('success', 'Servidor ClufinNotify V2.0 iniciado (Correção de Valor)');
+    console.log(`⏱️  Timeout dos Jobs: ${JOB_TIMEOUT/1000} segundos`);
+    console.log(`🔄 Janela Anti-Duplicados: ${DUPLICATE_WINDOW/1000} segundos`);
+    console.log(`✅ Servidor iniciado!\n`);
+    addLog('success', 'Servidor V3.0 iniciado (Timeout: 15s)');
 });
