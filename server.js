@@ -1,4 +1,4 @@
-// ===== SERVIDOR AUTO-JOINER V3.2 - DEBUG EXTREMO =====
+// ===== SERVIDOR AUTO-JOINER V3.3 - PARSE CORRIGIDO =====
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,9 +33,9 @@ function addLog(type, message, data = null) {
     if (data) console.log('   📦 Dados:', JSON.stringify(data, null, 2));
 }
 
-// ===== MIDDLEWARES (ORDEM CORRETA) =====
+// ===== MIDDLEWARES =====
 
-// 1. CORS (ANTES DE TUDO)
+// 1. CORS
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
@@ -48,30 +48,29 @@ app.use((req, res, next) => {
     next();
 });
 
-// 2. LOG DE TODAS AS REQUISIÇÕES (ANTES DO PARSE)
+// 2. LOG DE REQUISIÇÕES
 app.use((req, res, next) => {
-    addLog('info', `🌐 REQUISIÇÃO RECEBIDA: ${req.method} ${req.path}`, {
+    addLog('info', `🌐 REQUISIÇÃO: ${req.method} ${req.path}`, {
         ip: req.ip,
-        headers: req.headers,
-        query: req.query
+        contentType: req.headers['content-type']
     });
     next();
 });
 
-// 3. PARSE JSON (LIMITES AUMENTADOS)
+// 3. PARSE JSON
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// 4. LOG DO BODY APÓS PARSE
+// 4. LOG DO BODY
 app.use((req, res, next) => {
     if (req.body && Object.keys(req.body).length > 0) {
-        addLog('debug', '📦 BODY PARSEADO', { 
-            body: req.body,
-            bodyType: typeof req.body,
-            keys: Object.keys(req.body)
+        addLog('debug', '📦 BODY RECEBIDO', { 
+            bodyKeys: Object.keys(req.body),
+            hasEmbeds: !!req.body.embeds,
+            embedsLength: req.body.embeds?.length
         });
     } else {
-        addLog('warning', '⚠️ BODY VAZIO OU NÃO PARSEADO');
+        addLog('warning', '⚠️ BODY VAZIO');
     }
     next();
 });
@@ -94,186 +93,153 @@ let stats = {
     }
 };
 
-// ===== PARSE WEBHOOK =====
+// ===== PARSE WEBHOOK (VERSÃO CORRIGIDA) =====
 function parseWebhook(body) {
-    addLog('debug', '🔍 INICIANDO PARSE', { 
-        bodyType: typeof body,
-        isObject: typeof body === 'object',
-        isNull: body === null,
-        keys: body ? Object.keys(body) : []
-    });
+    addLog('debug', '🔍 INICIANDO PARSE');
     
     try {
-        // Verificação 1: Body existe?
-        if (!body) {
-            addLog('error', '❌ Body é null ou undefined');
+        if (!body || !body.embeds || !Array.isArray(body.embeds) || body.embeds.length === 0) {
+            addLog('error', '❌ Body inválido ou sem embeds', { body });
             return null;
         }
         
-        // Verificação 2: Tem embeds?
-        if (!body.embeds) {
-            addLog('error', '❌ Body não tem propriedade "embeds"', { body });
-            return null;
-        }
-        
-        // Verificação 3: Embeds é array?
-        if (!Array.isArray(body.embeds)) {
-            addLog('error', '❌ Embeds não é um array', { 
-                embedsType: typeof body.embeds,
-                embeds: body.embeds 
-            });
-            return null;
-        }
-        
-        // Verificação 4: Array tem itens?
         const embeds = body.embeds;
-        if (embeds.length === 0) {
-            addLog('warning', '⚠️ Array de embeds está vazio');
-            return null;
-        }
-        
         addLog('success', `✅ ${embeds.length} embed(s) encontrado(s)`);
         
-        // Processar cada embed
         for (let i = 0; i < embeds.length; i++) {
             const embed = embeds[i];
-            addLog('debug', `🔎 Processando embed #${i + 1}`, { 
-                embed,
-                keys: Object.keys(embed)
-            });
+            addLog('debug', `🔎 Processando embed #${i + 1}`);
             
-            let name = 'Unknown';
-            let value = '0';
+            let name = null;
+            let value = null;
             let jobId = null;
             let players = '0/0';
             
-            // TÍTULO
+            // ===== EXTRAÇÃO MAIS FLEXÍVEL =====
+            
+            // 1. Extrair todo o texto do embed
+            const allText = [
+                embed.title || '',
+                embed.description || '',
+                ...(embed.fields || []).map(f => `${f.name || ''} ${f.value || ''}`)
+            ].join(' ');
+            
+            addLog('debug', '📝 Texto completo do embed', { allText: allText.substring(0, 200) });
+            
+            // 2. Procurar Job ID (UUID padrão)
+            const jobIdMatch = allText.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+            if (jobIdMatch) {
+                jobId = jobIdMatch[1];
+                addLog('success', '🔑 Job ID encontrado', { jobId });
+            }
+            
+            // 3. Procurar VALOR (padrões flexíveis)
+            // Aceita: $5K/s, 5K/s, $10M/s, 10M/s, $500/s, 500/s, $1.5K/s, 1.5K/s
+            const valuePatterns = [
+                /\$?\s*([0-9]+\.?[0-9]*\s*[KMBT]\/s)/gi,  // 5K/s, $5K/s, 1.5K/s
+                /\$?\s*([0-9]+\.?[0-9]*)\s*\/\s*s/gi,      // 500/s, $500/s
+                /valor[:\s]*\$?\s*([0-9]+\.?[0-9]*\s*[KMBT]?)/gi  // Valor: 5K, Valor: $5K
+            ];
+            
+            for (const pattern of valuePatterns) {
+                const matches = allText.match(pattern);
+                if (matches && matches.length > 0) {
+                    // Pega a primeira ocorrência
+                    value = matches[0]
+                        .replace(/valor[:\s]*/gi, '')
+                        .replace(/\s+/g, '')
+                        .trim();
+                    
+                    // Normaliza para sempre ter /s se for um número com K/M/B/T
+                    if (value.match(/[KMBT]$/i) && !value.includes('/s')) {
+                        value += '/s';
+                    }
+                    
+                    addLog('success', '💰 Valor encontrado', { value, pattern: pattern.toString() });
+                    break;
+                }
+            }
+            
+            // 4. Procurar PLAYERS (X/Y)
+            const playersMatch = allText.match(/(\d+)\s*\/\s*(\d+)/);
+            if (playersMatch) {
+                players = `${playersMatch[1]}/${playersMatch[2]}`;
+                addLog('success', '👥 Players encontrados', { players });
+            }
+            
+            // 5. Extrair NOME do brainrot
             if (embed.title) {
-                addLog('debug', '📝 Título encontrado', { title: embed.title });
-                
-                let titleClean = embed.title
+                // Remove emojis, valores monetários e limpa
+                name = embed.title
                     .replace(/[🔥💎⭐🚨☯️\*]/g, '')
+                    .replace(/\$?\s*[0-9]+\.?[0-9]*\s*[KMBT]?\/s/gi, '')
+                    .replace(/\$?\s*[0-9]+\.?[0-9]*\s*\/\s*s/gi, '')
                     .trim();
                 
-                // Extrai valor (ex: $1.5K/s, 1.5K/s, $10M/s)
-                // IMPORTANTE: Captura o $ se existir
-                const valueMatch = titleClean.match(/(\$[0-9.]+[KMBT]?\/s)/i);
-                if (valueMatch) {
-                    value = valueMatch[1]; // Mantém o $
-                    name = titleClean.replace(/\$[0-9.]+[KMBT]?\/s/i, '').trim();
-                    addLog('success', '✅ Extraído do título', { name, value });
-                } else {
-                    // Tenta sem $
-                    const valueMatch2 = titleClean.match(/([0-9.]+[KMBT]?\/s)/i);
-                    if (valueMatch2) {
-                        value = valueMatch2[1];
-                        name = titleClean.replace(/[0-9.]+[KMBT]?\/s/i, '').trim();
-                        addLog('success', '✅ Extraído do título (sem $)', { name, value });
-                    } else {
-                        name = titleClean;
-                        addLog('info', 'ℹ️ Título sem valor monetário', { name });
-                    }
+                if (name) {
+                    addLog('success', '📝 Nome extraído do título', { name });
                 }
             }
             
-            // DESCRIÇÃO
-            if (embed.description) {
-                addLog('debug', '📄 Descrição encontrada', { description: embed.description });
+            // 6. Se não tem nome, tenta da descrição
+            if (!name && embed.description) {
+                name = embed.description
+                    .split('\n')[0]
+                    .replace(/[🔥💎⭐🚨☯️\*]/g, '')
+                    .replace(/\$?\s*[0-9]+\.?[0-9]*\s*[KMBT]?\/s/gi, '')
+                    .trim()
+                    .substring(0, 50);
                 
-                if (value === '0') {
-                    const descValueMatch = embed.description.match(/\$?([0-9.]+[KMBT]?\/s)/i);
-                    if (descValueMatch) {
-                        value = descValueMatch[1];
-                        addLog('success', '✅ Valor extraído da descrição', { value });
-                    }
+                if (name) {
+                    addLog('info', '📝 Nome extraído da descrição', { name });
                 }
             }
             
-            // FIELDS
-            if (embed.fields && Array.isArray(embed.fields)) {
-                addLog('debug', `📋 ${embed.fields.length} field(s) encontrado(s)`);
-                
-                for (const field of embed.fields) {
-                    addLog('debug', '🔍 Field', { 
-                        name: field.name, 
-                        value: field.value 
-                    });
-                    
-                    const fieldName = (field.name || '').toLowerCase();
-                    const fieldValue = field.value || '';
-                    
-                    // Job ID
-                    if (fieldName.includes('job') || fieldName.includes('id') || fieldName.includes('🌐')) {
-                        const jobMatch = fieldValue.match(/([a-f0-9\-]{36})/i);
-                        if (jobMatch) {
-                            jobId = jobMatch[1];
-                            addLog('success', '🔑 Job ID encontrado', { jobId });
-                        }
-                    }
-                    
-                    // Valor
-                    if (fieldName.includes('valor') || fieldName.includes('value') || fieldName.includes('💰')) {
-                        const cleanValue = fieldValue.replace(/[\*\$`]/g, '').trim();
-                        const valMatch = cleanValue.match(/([0-9.]+[KMBT]?\/s)/i);
-                        if (valMatch) {
-                            value = valMatch[1];
-                            addLog('success', '💰 Valor encontrado no field', { value });
-                        }
-                    }
-                    
-                    // Players
-                    if (fieldName.includes('player') || fieldName.includes('jogador') || fieldName.includes('👥')) {
-                        const playMatch = fieldValue.match(/(\d+)\/(\d+)/);
-                        if (playMatch) {
-                            players = `${playMatch[1]}/${playMatch[2]}`;
-                            addLog('success', '👥 Players encontrados', { players });
-                        }
-                    }
-                }
-            }
+            // ===== VALIDAÇÃO FINAL MAIS PERMISSIVA =====
+            const isValid = (jobId !== null) || (name && name.length > 2) || (value !== null);
             
-            // ===== FALLBACK: BUSCA VALOR EM QUALQUER LUGAR =====
-            if (value === '0') {
-                addLog('warning', '⚠️ Valor ainda é 0, tentando fallback...');
-                
-                // Junta tudo do embed numa string só
-                const embedString = JSON.stringify(embed);
-                
-                // Procura por padrões de valor ($10M/s, 50K/s, etc)
-                const fallbackMatch = embedString.match(/(\$?[0-9.]+[KMBT]\/s)/i);
-                if (fallbackMatch) {
-                    value = fallbackMatch[1];
-                    addLog('success', '✅ Valor encontrado via fallback', { value });
-                }
-            }
-            
-            // ===== VALIDAÇÃO FINAL =====
-            const isValid = jobId || name !== 'Unknown';
+            addLog('debug', '🔍 Validação', { 
+                isValid, 
+                hasJobId: jobId !== null,
+                hasName: name && name.length > 2,
+                hasValue: value !== null
+            });
             
             if (isValid) {
                 const parsedJob = {
                     jobId: jobId || null,
-                    name,
-                    players,
-                    value,
-                    time: Date.now()
+                    name: name || 'Brainrot',
+                    players: players,
+                    value: value || '0/s',
+                    time: Date.now(),
+                    rawEmbed: embed  // Guardar embed original para debug
                 };
                 
-                addLog('success', '🎉 JOB PARSEADO COM SUCESSO!', parsedJob);
+                addLog('success', '🎉 JOB PARSEADO!', {
+                    name: parsedJob.name,
+                    value: parsedJob.value,
+                    jobId: parsedJob.jobId || 'N/A',
+                    players: parsedJob.players
+                });
+                
                 return parsedJob;
             } else {
-                addLog('warning', '⚠️ Embed não contém job válido');
+                addLog('warning', '⚠️ Embed não passou na validação', {
+                    jobId,
+                    name,
+                    value,
+                    allText: allText.substring(0, 100)
+                });
             }
         }
         
-        addLog('error', '❌ Nenhum embed válido processado');
+        addLog('error', '❌ Nenhum embed válido encontrado');
         return null;
         
     } catch (e) {
-        addLog('error', '❌ ERRO CRÍTICO NO PARSE', { 
+        addLog('error', '❌ ERRO NO PARSE', { 
             error: e.message,
-            stack: e.stack,
-            body 
+            stack: e.stack.split('\n').slice(0, 3)
         });
         return null;
     }
@@ -283,13 +249,13 @@ function parseWebhook(body) {
 function scheduleJobRemoval(job) {
     setTimeout(() => {
         const index = jobQueue.findIndex(j => 
-            (j.jobId === job.jobId && job.jobId !== null) || 
-            (j.name === job.name && j.time === job.time)
+            (j.jobId && j.jobId === job.jobId) || 
+            (j.time === job.time)
         );
         if (index !== -1) {
             jobQueue.splice(index, 1);
             stats.totalExpired++;
-            addLog('warning', `⏱️ Job expirado`, { name: job.name, value: job.value });
+            addLog('warning', `⏱️ Job expirado`, { name: job.name });
         }
     }, JOB_TIMEOUT);
 }
@@ -305,19 +271,14 @@ async function reenviarParaDiscord(body, category) {
     };
     
     const webhookUrl = WEBHOOKS[category];
-    
-    if (!webhookUrl) {
-        addLog('error', '❌ Webhook URL não encontrado', { category });
-        return false;
-    }
+    if (!webhookUrl) return false;
     
     try {
-        addLog('info', `📤 Reenviando para Discord [${category.toUpperCase()}]`);
+        addLog('info', `📤 Reenviando [${category.toUpperCase()}]`);
         
         const https = require('https');
         const url = require('url');
         const parsedUrl = url.parse(webhookUrl);
-        
         const postData = JSON.stringify(body);
         
         const options = {
@@ -334,24 +295,26 @@ async function reenviarParaDiscord(body, category) {
         return new Promise((resolve) => {
             const req = https.request(options, (res) => {
                 let data = '';
-                
-                res.on('data', (chunk) => {
-                    data += chunk;
-                });
-                
+                res.on('data', (chunk) => { data += chunk; });
                 res.on('end', () => {
                     if (res.statusCode >= 200 && res.statusCode < 300) {
-                        addLog('success', `✅ Webhook Discord enviado [${category.toUpperCase()}]`);
+                        addLog('success', `✅ Discord OK [${category}]`);
                         resolve(true);
                     } else {
-                        addLog('error', `❌ Erro Discord: ${res.statusCode}`, { body: data });
+                        addLog('error', `❌ Discord falhou [${category}]: ${res.statusCode}`);
                         resolve(false);
                     }
                 });
             });
             
             req.on('error', (error) => {
-                addLog('error', '❌ Erro ao enviar Discord', { error: error.message });
+                addLog('error', '❌ Erro Discord', { error: error.message });
+                resolve(false);
+            });
+            
+            req.setTimeout(5000, () => {
+                req.destroy();
+                addLog('error', '❌ Timeout Discord');
                 resolve(false);
             });
             
@@ -360,21 +323,24 @@ async function reenviarParaDiscord(body, category) {
         });
         
     } catch (error) {
-        addLog('error', '❌ Erro ao enviar Discord', { error: error.message });
+        addLog('error', '❌ Exceção Discord', { error: error.message });
         return false;
     }
 }
 
 // ===== PROCESSAR WEBHOOK =====
 async function processWebhook(req, res, category) {
-    addLog('info', `📥 PROCESSANDO WEBHOOK [${category.toUpperCase()}]`);
+    addLog('info', `📥 PROCESSANDO [${category.toUpperCase()}]`);
     
-    // ===== REENVIAR PARA DISCORD IMEDIATAMENTE =====
-    reenviarParaDiscord(req.body, category);
+    // Reenviar para Discord (não bloqueia)
+    reenviarParaDiscord(req.body, category).catch(err => {
+        addLog('error', '❌ Erro ao reenviar', { error: err.message });
+    });
     
     const job = parseWebhook(req.body);
     
     if (job) {
+        // Verifica duplicação
         let isDupe = false;
         if (job.jobId) {
             isDupe = jobQueue.some(j => 
@@ -391,16 +357,15 @@ async function processWebhook(req, res, category) {
             
             scheduleJobRemoval(job);
             
-            addLog('success', `🎉 JOB ADICIONADO [${category.toUpperCase()}]`, {
+            addLog('success', `🎉 JOB NA FILA [${category.toUpperCase()}]`, {
                 name: job.name,
                 value: job.value,
-                jobId: job.jobId || 'N/A',
                 queueSize: jobQueue.length
             });
             
             return res.status(200).json({ 
                 success: true, 
-                message: 'Job adicionado com sucesso',
+                message: 'Job adicionado',
                 job: {
                     name: job.name,
                     value: job.value,
@@ -409,37 +374,38 @@ async function processWebhook(req, res, category) {
                 queueSize: jobQueue.length 
             });
         } else {
-            addLog('warning', '⚠️ Job duplicado', { jobId: job.jobId });
+            addLog('warning', '⚠️ Job duplicado (ignorado)');
             return res.status(200).json({ 
                 success: true, 
-                message: 'Job duplicado (ignorado)' 
+                message: 'Duplicado' 
             });
         }
     } else {
         stats.totalFailed++;
-        addLog('error', '❌ FALHA AO PROCESSAR WEBHOOK');
-        return res.status(400).json({ 
+        addLog('error', '❌ FALHA NO PARSE');
+        
+        // Log do body completo para debug
+        addLog('debug', '📦 Body que falhou', { 
+            body: JSON.stringify(req.body).substring(0, 500)
+        });
+        
+        return res.status(200).json({ 
             success: false, 
-            error: 'Falha ao parsear webhook',
-            message: 'Verifique o formato do body enviado'
+            error: 'Falha ao parsear (verifique logs)'
         });
     }
 }
 
 // ===== ENDPOINTS =====
 
-// Webhook genérico (PRIMEIRO, para pegar tudo)
 app.post('/webhook', async (req, res) => {
-    addLog('info', '📨 Webhook genérico /webhook');
     await processWebhook(req, res, 'free');
 });
 
 app.post('/discord-webhook', async (req, res) => {
-    addLog('info', '📨 Webhook /discord-webhook');
     await processWebhook(req, res, 'free');
 });
 
-// Webhooks específicos
 app.post('/webhook/normal', async (req, res) => await processWebhook(req, res, 'free'));
 app.post('/webhook/special', async (req, res) => await processWebhook(req, res, 'basico'));
 app.post('/webhook/highlight', async (req, res) => await processWebhook(req, res, 'highlight'));
@@ -477,39 +443,46 @@ app.get('/get-job', (req, res) => {
         });
     }
     
-    res.json({ success: false, message: 'Nenhum job disponível' });
+    res.json({ success: false, message: 'Fila vazia' });
 });
 
-// Logs via API
+// Logs
 app.get('/logs', (req, res) => {
     res.json({
         success: true,
         total: requestLog.length,
         logs: requestLog.slice(0, 100),
-        stats
+        stats,
+        currentQueue: jobQueue.map(j => ({
+            name: j.name,
+            value: j.value,
+            category: j.category,
+            timeLeft: Math.floor((JOB_TIMEOUT - (Date.now() - j.time)) / 1000)
+        }))
     });
 });
 
-// Teste manual
+// Teste
 app.get('/test', (req, res) => {
     const testJob = {
         embeds: [{
-            title: "🔥 Test Job $5K/s",
+            title: "🔥 Test Brainrot $5K/s",
+            description: "Job de teste",
             fields: [
-                { name: "Job ID", value: "test-12345" },
+                { name: "Job ID", value: "12345678-1234-1234-1234-123456789abc" },
                 { name: "Players", value: "5/10" }
             ]
         }]
     };
     
-    addLog('info', '🧪 Teste manual iniciado');
+    addLog('info', '🧪 TESTE MANUAL');
     req.body = testJob;
     processWebhook(req, res, 'free');
 });
 
 // Dashboard
 app.get('/', (req, res) => {
-    const recentLogs = requestLog.slice(0, 20).map(log => {
+    const recentLogs = requestLog.slice(0, 30).map(log => {
         const time = new Date(log.time).toLocaleTimeString();
         const emoji = {
             'success': '✅',
@@ -521,7 +494,7 @@ app.get('/', (req, res) => {
         
         return `<div class="log-item log-${log.type}">
             ${emoji} <strong>[${time}]</strong> ${log.message}
-            ${log.data ? `<br><small style="opacity:0.7;font-family:monospace">${JSON.stringify(log.data).substring(0, 150)}...</small>` : ''}
+            ${log.data ? `<br><small style="opacity:0.7;font-family:monospace;font-size:0.75em">${JSON.stringify(log.data).substring(0, 200)}...</small>` : ''}
         </div>`;
     }).join('');
     
@@ -531,8 +504,8 @@ app.get('/', (req, res) => {
             <div class="timer">⏱️ ${timeLeft}s</div>
             <strong>${j.name}</strong>
             <span class="category-badge ${j.category}">${j.category.toUpperCase()}</span><br>
-            <span class="value-highlight">💰 $${j.value}</span><br>
-            <small>📝 ${j.jobId || 'Sem ID'} | 👥 ${j.players}</small>
+            <span class="value-highlight">💰 ${j.value}</span><br>
+            <small>📝 ${j.jobId ? j.jobId.substring(0, 8) + '...' : 'Sem ID'} | 👥 ${j.players}</small>
         </div>`;
     }).join('') || '<div style="text-align:center;opacity:0.6;padding:40px">📭 Fila vazia</div>';
     
@@ -540,7 +513,8 @@ app.get('/', (req, res) => {
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Auto-Joiner V3.2 DEBUG</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-Joiner V3.3</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:system-ui;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;min-height:100vh;padding:20px}
@@ -572,15 +546,17 @@ app.get('/', (req, res) => {
         .log-warning{border-color:#fbbf24}
         .log-info{border-color:#3b82f6}
         .log-debug{border-color:#a855f7}
+        button{background:#4ade80;color:#000;border:none;padding:10px 20px;border-radius:5px;font-weight:bold;cursor:pointer;transition:all .3s}
+        button:hover{background:#22c55e;transform:translateY(-2px)}
         @media(max-width:768px){.grid-2{grid-template-columns:1fr}}
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔥 Auto-Joiner V3.2 DEBUG</h1>
+            <h1>🔥 Auto-Joiner V3.3</h1>
             <span class="online-badge">● ONLINE</span>
-            <p style="margin-top:10px;opacity:.8">Timeout: ${JOB_TIMEOUT/1000}s | Logs: ${requestLog.length}</p>
+            <p style="margin-top:10px;opacity:.8">Parse Corrigido | Timeout: ${JOB_TIMEOUT/1000}s</p>
         </div>
         
         <div class="section">
@@ -590,37 +566,39 @@ app.get('/', (req, res) => {
                 <div class="stat-item"><div class="stat-value">${stats.totalProcessed}</div><div class="stat-label">✅ Processados</div></div>
                 <div class="stat-item"><div class="stat-value">${stats.totalExpired}</div><div class="stat-label">⏱️ Expirados</div></div>
                 <div class="stat-item"><div class="stat-value">${stats.totalFailed}</div><div class="stat-label">❌ Falhas</div></div>
-                <div class="stat-item"><div class="stat-value">${jobQueue.length}</div><div class="stat-label">📋 Na Fila</div></div>
+                <div class="stat-item" style="background:rgba(74,222,128,.2)"><div class="stat-value">${jobQueue.length}</div><div class="stat-label">📋 NA FILA</div></div>
             </div>
         </div>
         
         <div class="grid-2">
             <div class="section queue">
-                <h2>📋 Fila (${jobQueue.length})</h2>
+                <h2>📋 Fila Atual (${jobQueue.length})</h2>
                 ${queueItems}
             </div>
             
             <div class="section logs">
-                <h2>📄 Logs em Tempo Real</h2>
+                <h2>📄 Logs (últimos 30)</h2>
                 ${recentLogs}
             </div>
         </div>
         
         <div class="section">
             <h2>🧪 Teste Manual</h2>
-            <p style="opacity:.8;margin-bottom:10px">Clique no botão para enviar um job de teste</p>
-            <button onclick="fetch('/test').then(r=>r.json()).then(d=>alert(JSON.stringify(d)))" 
-                    style="background:#4ade80;color:#000;border:none;padding:10px 20px;border-radius:5px;font-weight:bold;cursor:pointer">
+            <p style="opacity:.8;margin-bottom:10px">Enviar job de teste para verificar funcionamento</p>
+            <button onclick="fetch('/test').then(r=>r.json()).then(d=>{alert(JSON.stringify(d,null,2));location.reload()})">
                 🚀 Enviar Job de Teste
+            </button>
+            <button onclick="fetch('/logs').then(r=>r.json()).then(d=>console.log(d))" style="margin-left:10px;background:#3b82f6">
+                📄 Ver Logs no Console
             </button>
         </div>
     </div>
-    <script>setTimeout(()=>location.reload(),3000)</script>
+    <script>setTimeout(()=>location.reload(),5000)</script>
 </body>
 </html>`);
 });
 
-// ===== LIMPEZA =====
+// Limpeza periódica
 setInterval(() => {
     const before = jobQueue.length;
     jobQueue = jobQueue.filter(j => (Date.now() - j.time) < JOB_TIMEOUT);
@@ -631,24 +609,6 @@ setInterval(() => {
     }
 }, 10000);
 
-// ===== INICIAR =====
+// Iniciar
 app.listen(PORT, () => {
-    console.log('\n╔══════════════════════════════════════════╗');
-    console.log('║  🔥 AUTO-JOINER V3.2 - DEBUG EXTREMO 🔥 ║');
-    console.log('╚══════════════════════════════════════════╝\n');
-    console.log(`🌐 Porta: ${PORT}`);
-    console.log(`⏱️  Timeout: ${JOB_TIMEOUT/1000}s`);
-    console.log(`\n📍 Endpoints:`);
-    console.log(`   POST /webhook`);
-    console.log(`   POST /discord-webhook`);
-    console.log(`   POST /webhook/normal`);
-    console.log(`   POST /webhook/special`);
-    console.log(`   POST /webhook/highlight`);
-    console.log(`   POST /webhook/premium`);
-    console.log(`   POST /webhook/mid-highlight`);
-    console.log(`   GET  /get-job`);
-    console.log(`   GET  /logs`);
-    console.log(`   GET  /test`);
-    console.log(`\n✅ Servidor iniciado!\n`);
-    addLog('success', '🚀 Servidor V3.2 com debug extremo iniciado');
-});
+    console.log('\n╔
