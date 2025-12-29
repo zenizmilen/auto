@@ -468,7 +468,7 @@ app.get('/logs', (req, res) => {
 app.get('/test', (req, res) => {
     const testJob = {
         embeds: [{
-            title: "💎 Test Job $15M/s",
+            title: "🚨 Test Job $150M/s",
             fields: [
                 { name: "Job ID", value: "test-12345" },
                 { name: "Players", value: "5/10" }
@@ -567,13 +567,13 @@ app.get('/', (req, res) => {
                 <div class="stat-item"><div class="stat-value">${jobQueue.length}</div><div class="stat-label">📋 Na Fila</div></div>
             </div>
             <div class="webhook-info">
-                <strong>🔗 Webhooks Ativas:</strong><br>
+                <strong>🔗 Webhooks Ativas (AMBAS RECEBEM 10M+):</strong><br>
                 <div class="webhook-item">
-                    <strong>💎 HIGHLIGHT (1M-10M):</strong><br>
+                    <strong>💎 HIGHLIGHT (10M-1B+):</strong><br>
                     <small style="word-break:break-all;opacity:0.8">...1451031692927041678</small>
                 </div>
                 <div class="webhook-item">
-                    <strong>🚨 PREMIUM (10M+):</strong><br>
+                    <strong>🚨 PREMIUM (10M-1B+):</strong><br>
                     <small style="word-break:break-all;opacity:0.8">...1451031769687134292</small>
                 </div>
             </div>
@@ -593,10 +593,10 @@ app.get('/', (req, res) => {
         
         <div class="section">
             <h2>🧪 Teste Manual</h2>
-            <p style="opacity:.8;margin-bottom:10px">Clique no botão para enviar um job de teste PREMIUM (15M)</p>
+            <p style="opacity:.8;margin-bottom:10px">Clique no botão para enviar um job de teste (vai para AMBAS webhooks)</p>
             <button onclick="fetch('/test').then(r=>r.json()).then(d=>alert(JSON.stringify(d)))" 
                     style="background:#4ade80;color:#000;border:none;padding:10px 20px;border-radius:5px;font-weight:bold;cursor:pointer">
-                🚀 Enviar Job de Teste
+                🚀 Enviar Job de Teste (150M)
             </button>
         </div>
     </div>
@@ -623,9 +623,9 @@ app.listen(PORT, () => {
     console.log('╚═══════════════════════════════════════╝\n');
     console.log(`🌐 Porta: ${PORT}`);
     console.log(`⏱️  Timeout: ${JOB_TIMEOUT/1000}s`);
-    console.log(`\n🔗 Webhooks:`);
-    console.log(`   💎 HIGHLIGHT (1M-10M): ...678`);
-    console.log(`   🚨 PREMIUM (10M+): ...292`);
+    console.log(`\n🔗 Webhooks (AMBAS RECEBEM 10M+):`);
+    console.log(`   💎 HIGHLIGHT: ...678`);
+    console.log(`   🚨 PREMIUM: ...292`);
     console.log(`\n📍 Endpoints:`);
     console.log(`   POST /webhook/highlight`);
     console.log(`   POST /webhook/premium`);
