@@ -83,6 +83,8 @@ let stats = {
     totalProcessed: 0,
     totalFailed: 0,
     totalExpired: 0,
+    totalWebhooksSent: 0,
+    totalWebhooksFailed: 0,
     lastUpdate: null,
     startTime: new Date().toISOString(),
     byWebhook: {
@@ -296,27 +298,15 @@ function scheduleJobRemoval(job) {
 
 // ===== REENVIAR PARA DISCORD =====
 async function reenviarParaDiscord(body, category) {
-    const WEBHOOKS = {
-        free: "https://discord.com/api/webhooks/1451031458612252704/Oo1K9KNcTSRbRFcSTlveMyNnMA2DOKFATnYKSI8Q-RvMBPI5ZnqF0dRkjKgGHq7o5c1D",
-        basico: "https://discord.com/api/webhooks/1449966669005848668/QAjwTBI7Erv6mZr5hTvsX3Ctgwofoboj7bZZot4v02f6TiGQJustRdsd_ax0vgCo9NTU",
-        highlight: "https://discord.com/api/webhooks/1451031692927041678/Pwu3TLXC61aPFcXkz7xnz8P0hoq_vyI2z2-f9t6nSqQ5ncM7A4JsbplrBiDCMjDOKGTl",
-        premium: "https://discord.com/api/webhooks/1451031769687134292/ZCdEm84p2TJPAztbpFUc0ovMRS8l97D9ZX9_70zBKCGHY_xufru7yySP5oyqRxpzmkBj",
-        essencial: "https://discord.com/api/webhooks/1450158161959850086/E8uoVdUtw6qYnUi57zJEbAADvQ5OFXUdMGkR1cPu3934jA-Gm3jCvdbbEJhBbDROLHIf"
-    };
-    
-    const webhookUrl = WEBHOOKS[category];
-    
-    if (!webhookUrl) {
-        addLog('error', '❌ Webhook URL não encontrado', { category });
-        return false;
-    }
+    // URL da webhook fornecida pelo usuário
+    const WEBHOOK_URL = "https://discord.com/api/webhooks/1455245255220924733/xHjfuf6vUQ38ymknALtCcLav56n9MFHRoOXjOOSuGMihtptiKjY3VgiDiWSbUM6ntRhu";
     
     try {
         addLog('info', `📤 Reenviando para Discord [${category.toUpperCase()}]`);
         
         const https = require('https');
         const url = require('url');
-        const parsedUrl = url.parse(webhookUrl);
+        const parsedUrl = url.parse(WEBHOOK_URL);
         
         const postData = JSON.stringify(body);
         
@@ -341,9 +331,11 @@ async function reenviarParaDiscord(body, category) {
                 
                 res.on('end', () => {
                     if (res.statusCode >= 200 && res.statusCode < 300) {
+                        stats.totalWebhooksSent++;
                         addLog('success', `✅ Webhook Discord enviado [${category.toUpperCase()}]`);
                         resolve(true);
                     } else {
+                        stats.totalWebhooksFailed++;
                         addLog('error', `❌ Erro Discord: ${res.statusCode}`, { body: data });
                         resolve(false);
                     }
@@ -351,6 +343,7 @@ async function reenviarParaDiscord(body, category) {
             });
             
             req.on('error', (error) => {
+                stats.totalWebhooksFailed++;
                 addLog('error', '❌ Erro ao enviar Discord', { error: error.message });
                 resolve(false);
             });
@@ -360,6 +353,7 @@ async function reenviarParaDiscord(body, category) {
         });
         
     } catch (error) {
+        stats.totalWebhooksFailed++;
         addLog('error', '❌ Erro ao enviar Discord', { error: error.message });
         return false;
     }
@@ -572,6 +566,7 @@ app.get('/', (req, res) => {
         .log-warning{border-color:#fbbf24}
         .log-info{border-color:#3b82f6}
         .log-debug{border-color:#a855f7}
+        .webhook-info{background:rgba(59,130,246,.2);padding:15px;border-radius:10px;margin-top:15px;border-left:4px solid #3b82f6}
         @media(max-width:768px){.grid-2{grid-template-columns:1fr}}
     </style>
 </head>
@@ -588,9 +583,14 @@ app.get('/', (req, res) => {
             <div class="stat-grid">
                 <div class="stat-item"><div class="stat-value">${stats.totalReceived}</div><div class="stat-label">📥 Recebidos</div></div>
                 <div class="stat-item"><div class="stat-value">${stats.totalProcessed}</div><div class="stat-label">✅ Processados</div></div>
+                <div class="stat-item"><div class="stat-value">${stats.totalWebhooksSent}</div><div class="stat-label">📤 Webhooks Enviados</div></div>
+                <div class="stat-item"><div class="stat-value">${stats.totalWebhooksFailed}</div><div class="stat-label">❌ Webhooks Falhos</div></div>
                 <div class="stat-item"><div class="stat-value">${stats.totalExpired}</div><div class="stat-label">⏱️ Expirados</div></div>
-                <div class="stat-item"><div class="stat-value">${stats.totalFailed}</div><div class="stat-label">❌ Falhas</div></div>
                 <div class="stat-item"><div class="stat-value">${jobQueue.length}</div><div class="stat-label">📋 Na Fila</div></div>
+            </div>
+            <div class="webhook-info">
+                <strong>🔗 Webhook Ativa:</strong><br>
+                <small style="word-break:break-all;opacity:0.8">https://discord.com/api/webhooks/1455245255220924733/xHj...ntRhu</small>
             </div>
         </div>
         
@@ -638,6 +638,7 @@ app.listen(PORT, () => {
     console.log('╚══════════════════════════════════════════╝\n');
     console.log(`🌐 Porta: ${PORT}`);
     console.log(`⏱️  Timeout: ${JOB_TIMEOUT/1000}s`);
+    console.log(`🔗 Webhook: ...1455245255220924733`);
     console.log(`\n📍 Endpoints:`);
     console.log(`   POST /webhook`);
     console.log(`   POST /discord-webhook`);
@@ -652,4 +653,3 @@ app.listen(PORT, () => {
     console.log(`\n✅ Servidor iniciado!\n`);
     addLog('success', '🚀 Servidor V3.2 com debug extremo iniciado');
 });
-
