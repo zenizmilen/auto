@@ -1,4 +1,4 @@
-// ===== SERVIDOR AUTO-JOINER V3.2 - DEBUG EXTREMO =====
+// ===== SERVIDOR AUTO-JOINER V3.3 - 2 WEBHOOKS ONLY =====
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -88,12 +88,15 @@ let stats = {
     lastUpdate: null,
     startTime: new Date().toISOString(),
     byWebhook: {
-        free: 0,
-        basico: 0,
         highlight: 0,
-        premium: 0,
-        essencial: 0
+        premium: 0
     }
+};
+
+// ===== WEBHOOKS DISCORD =====
+const WEBHOOKS = {
+    highlight: "https://discord.com/api/webhooks/1451031692927041678/Pwu3TLXC61aPFcXkz7xnz8P0hoq_vyI2z2-f9t6nSqQ5ncM7A4JsbplrBiDCMjDOKGTl",
+    premium: "https://discord.com/api/webhooks/1451031769687134292/ZCdEm84p2TJPAztbpFUc0ovMRS8l97D9ZX9_70zBKCGHY_xufru7yySP5oyqRxpzmkBj"
 };
 
 // ===== PARSE WEBHOOK =====
@@ -106,19 +109,16 @@ function parseWebhook(body) {
     });
     
     try {
-        // Verificação 1: Body existe?
         if (!body) {
             addLog('error', '❌ Body é null ou undefined');
             return null;
         }
         
-        // Verificação 2: Tem embeds?
         if (!body.embeds) {
             addLog('error', '❌ Body não tem propriedade "embeds"', { body });
             return null;
         }
         
-        // Verificação 3: Embeds é array?
         if (!Array.isArray(body.embeds)) {
             addLog('error', '❌ Embeds não é um array', { 
                 embedsType: typeof body.embeds,
@@ -127,7 +127,6 @@ function parseWebhook(body) {
             return null;
         }
         
-        // Verificação 4: Array tem itens?
         const embeds = body.embeds;
         if (embeds.length === 0) {
             addLog('warning', '⚠️ Array de embeds está vazio');
@@ -136,7 +135,6 @@ function parseWebhook(body) {
         
         addLog('success', `✅ ${embeds.length} embed(s) encontrado(s)`);
         
-        // Processar cada embed
         for (let i = 0; i < embeds.length; i++) {
             const embed = embeds[i];
             addLog('debug', `🔎 Processando embed #${i + 1}`, { 
@@ -157,15 +155,12 @@ function parseWebhook(body) {
                     .replace(/[🔥💎⭐🚨☯️\*]/g, '')
                     .trim();
                 
-                // Extrai valor (ex: $1.5K/s, 1.5K/s, $10M/s)
-                // IMPORTANTE: Captura o $ se existir
                 const valueMatch = titleClean.match(/(\$[0-9.]+[KMBT]?\/s)/i);
                 if (valueMatch) {
-                    value = valueMatch[1]; // Mantém o $
+                    value = valueMatch[1];
                     name = titleClean.replace(/\$[0-9.]+[KMBT]?\/s/i, '').trim();
                     addLog('success', '✅ Extraído do título', { name, value });
                 } else {
-                    // Tenta sem $
                     const valueMatch2 = titleClean.match(/([0-9.]+[KMBT]?\/s)/i);
                     if (valueMatch2) {
                         value = valueMatch2[1];
@@ -234,14 +229,11 @@ function parseWebhook(body) {
                 }
             }
             
-            // ===== FALLBACK: BUSCA VALOR EM QUALQUER LUGAR =====
+            // FALLBACK: BUSCA VALOR EM QUALQUER LUGAR
             if (value === '0') {
                 addLog('warning', '⚠️ Valor ainda é 0, tentando fallback...');
                 
-                // Junta tudo do embed numa string só
                 const embedString = JSON.stringify(embed);
-                
-                // Procura por padrões de valor ($10M/s, 50K/s, etc)
                 const fallbackMatch = embedString.match(/(\$?[0-9.]+[KMBT]\/s)/i);
                 if (fallbackMatch) {
                     value = fallbackMatch[1];
@@ -249,7 +241,6 @@ function parseWebhook(body) {
                 }
             }
             
-            // ===== VALIDAÇÃO FINAL =====
             const isValid = jobId || name !== 'Unknown';
             
             if (isValid) {
@@ -298,15 +289,14 @@ function scheduleJobRemoval(job) {
 
 // ===== REENVIAR PARA DISCORD =====
 async function reenviarParaDiscord(body, category) {
-    // URL da webhook fornecida pelo usuário
-    const WEBHOOK_URL = "https://discord.com/api/webhooks/1455245255220924733/xHjfuf6vUQ38ymknALtCcLav56n9MFHRoOXjOOSuGMihtptiKjY3VgiDiWSbUM6ntRhu";
+    const webhookUrl = WEBHOOKS[category] || WEBHOOKS.highlight;
     
     try {
         addLog('info', `📤 Reenviando para Discord [${category.toUpperCase()}]`);
         
         const https = require('https');
         const url = require('url');
-        const parsedUrl = url.parse(WEBHOOK_URL);
+        const parsedUrl = url.parse(webhookUrl);
         
         const postData = JSON.stringify(body);
         
@@ -363,7 +353,7 @@ async function reenviarParaDiscord(body, category) {
 async function processWebhook(req, res, category) {
     addLog('info', `📥 PROCESSANDO WEBHOOK [${category.toUpperCase()}]`);
     
-    // ===== REENVIAR PARA DISCORD IMEDIATAMENTE =====
+    // Reenviar para Discord imediatamente
     reenviarParaDiscord(req.body, category);
     
     const job = parseWebhook(req.body);
@@ -422,30 +412,20 @@ async function processWebhook(req, res, category) {
 
 // ===== ENDPOINTS =====
 
-// Webhook genérico (PRIMEIRO, para pegar tudo)
-app.post('/webhook', async (req, res) => {
-    addLog('info', '📨 Webhook genérico /webhook');
-    await processWebhook(req, res, 'free');
-});
-
-app.post('/discord-webhook', async (req, res) => {
-    addLog('info', '📨 Webhook /discord-webhook');
-    await processWebhook(req, res, 'free');
-});
-
-// Webhooks específicos
-app.post('/webhook/normal', async (req, res) => await processWebhook(req, res, 'free'));
-app.post('/webhook/special', async (req, res) => await processWebhook(req, res, 'basico'));
+// Webhooks principais
 app.post('/webhook/highlight', async (req, res) => await processWebhook(req, res, 'highlight'));
 app.post('/webhook/premium', async (req, res) => await processWebhook(req, res, 'premium'));
-app.post('/webhook/mid-highlight', async (req, res) => await processWebhook(req, res, 'essencial'));
+
+// Webhooks genéricos (redirecionam para highlight)
+app.post('/webhook', async (req, res) => await processWebhook(req, res, 'highlight'));
+app.post('/discord-webhook', async (req, res) => await processWebhook(req, res, 'highlight'));
 
 // Pegar job
 app.get('/get-job', (req, res) => {
     jobQueue = jobQueue.filter(j => (Date.now() - j.time) < JOB_TIMEOUT);
     
     if (jobQueue.length > 0) {
-        const priority = { premium: 5, essencial: 4, highlight: 3, basico: 2, free: 1 };
+        const priority = { premium: 2, highlight: 1 };
         jobQueue.sort((a, b) => (priority[b.category] || 0) - (priority[a.category] || 0));
         
         const job = jobQueue.shift();
@@ -488,7 +468,7 @@ app.get('/logs', (req, res) => {
 app.get('/test', (req, res) => {
     const testJob = {
         embeds: [{
-            title: "🔥 Test Job $5K/s",
+            title: "💎 Test Job $15M/s",
             fields: [
                 { name: "Job ID", value: "test-12345" },
                 { name: "Players", value: "5/10" }
@@ -498,7 +478,7 @@ app.get('/test', (req, res) => {
     
     addLog('info', '🧪 Teste manual iniciado');
     req.body = testJob;
-    processWebhook(req, res, 'free');
+    processWebhook(req, res, 'premium');
 });
 
 // Dashboard
@@ -525,7 +505,7 @@ app.get('/', (req, res) => {
             <div class="timer">⏱️ ${timeLeft}s</div>
             <strong>${j.name}</strong>
             <span class="category-badge ${j.category}">${j.category.toUpperCase()}</span><br>
-            <span class="value-highlight">💰 $${j.value}</span><br>
+            <span class="value-highlight">💰 ${j.value}</span><br>
             <small>📝 ${j.jobId || 'Sem ID'} | 👥 ${j.players}</small>
         </div>`;
     }).join('') || '<div style="text-align:center;opacity:0.6;padding:40px">📭 Fila vazia</div>';
@@ -534,7 +514,7 @@ app.get('/', (req, res) => {
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Auto-Joiner V3.2 DEBUG</title>
+    <title>Auto-Joiner V3.3 - 2 Webhooks</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:system-ui;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;min-height:100vh;padding:20px}
@@ -556,10 +536,7 @@ app.get('/', (req, res) => {
         .value-highlight{color:#4ade80;font-weight:bold;font-size:1.1em}
         .category-badge{display:inline-block;padding:3px 8px;border-radius:5px;font-size:.75em;font-weight:bold;margin-left:5px}
         .premium{background:#fbbf24;color:#78350f}
-        .essencial{background:#f97316;color:#7c2d12}
         .highlight{background:#a855f7;color:#581c87}
-        .basico{background:#ef4444;color:#7f1d1d}
-        .free{background:#3b82f6;color:#1e3a8a}
         .log-item{background:rgba(255,255,255,.05);padding:10px;border-radius:5px;margin-bottom:8px;font-size:.85em;border-left:3px solid;word-break:break-word}
         .log-success{border-color:#4ade80}
         .log-error{border-color:#ef4444}
@@ -567,13 +544,14 @@ app.get('/', (req, res) => {
         .log-info{border-color:#3b82f6}
         .log-debug{border-color:#a855f7}
         .webhook-info{background:rgba(59,130,246,.2);padding:15px;border-radius:10px;margin-top:15px;border-left:4px solid #3b82f6}
+        .webhook-item{margin-bottom:10px}
         @media(max-width:768px){.grid-2{grid-template-columns:1fr}}
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔥 Auto-Joiner V3.2 DEBUG</h1>
+            <h1>🔥 Auto-Joiner V3.3 - 2 Webhooks</h1>
             <span class="online-badge">● ONLINE</span>
             <p style="margin-top:10px;opacity:.8">Timeout: ${JOB_TIMEOUT/1000}s | Logs: ${requestLog.length}</p>
         </div>
@@ -589,8 +567,15 @@ app.get('/', (req, res) => {
                 <div class="stat-item"><div class="stat-value">${jobQueue.length}</div><div class="stat-label">📋 Na Fila</div></div>
             </div>
             <div class="webhook-info">
-                <strong>🔗 Webhook Ativa:</strong><br>
-                <small style="word-break:break-all;opacity:0.8">https://discord.com/api/webhooks/1455245255220924733/xHj...ntRhu</small>
+                <strong>🔗 Webhooks Ativas:</strong><br>
+                <div class="webhook-item">
+                    <strong>💎 HIGHLIGHT (1M-10M):</strong><br>
+                    <small style="word-break:break-all;opacity:0.8">...1451031692927041678</small>
+                </div>
+                <div class="webhook-item">
+                    <strong>🚨 PREMIUM (10M+):</strong><br>
+                    <small style="word-break:break-all;opacity:0.8">...1451031769687134292</small>
+                </div>
             </div>
         </div>
         
@@ -608,7 +593,7 @@ app.get('/', (req, res) => {
         
         <div class="section">
             <h2>🧪 Teste Manual</h2>
-            <p style="opacity:.8;margin-bottom:10px">Clique no botão para enviar um job de teste</p>
+            <p style="opacity:.8;margin-bottom:10px">Clique no botão para enviar um job de teste PREMIUM (15M)</p>
             <button onclick="fetch('/test').then(r=>r.json()).then(d=>alert(JSON.stringify(d)))" 
                     style="background:#4ade80;color:#000;border:none;padding:10px 20px;border-radius:5px;font-weight:bold;cursor:pointer">
                 🚀 Enviar Job de Teste
@@ -633,23 +618,20 @@ setInterval(() => {
 
 // ===== INICIAR =====
 app.listen(PORT, () => {
-    console.log('\n╔══════════════════════════════════════════╗');
-    console.log('║  🔥 AUTO-JOINER V3.2 - DEBUG EXTREMO 🔥 ║');
-    console.log('╚══════════════════════════════════════════╝\n');
+    console.log('\n╔═══════════════════════════════════════╗');
+    console.log('║  🔥 AUTO-JOINER V3.3 - 2 WEBHOOKS 🔥 ║');
+    console.log('╚═══════════════════════════════════════╝\n');
     console.log(`🌐 Porta: ${PORT}`);
     console.log(`⏱️  Timeout: ${JOB_TIMEOUT/1000}s`);
-    console.log(`🔗 Webhook: ...1455245255220924733`);
+    console.log(`\n🔗 Webhooks:`);
+    console.log(`   💎 HIGHLIGHT (1M-10M): ...678`);
+    console.log(`   🚨 PREMIUM (10M+): ...292`);
     console.log(`\n📍 Endpoints:`);
-    console.log(`   POST /webhook`);
-    console.log(`   POST /discord-webhook`);
-    console.log(`   POST /webhook/normal`);
-    console.log(`   POST /webhook/special`);
     console.log(`   POST /webhook/highlight`);
     console.log(`   POST /webhook/premium`);
-    console.log(`   POST /webhook/mid-highlight`);
     console.log(`   GET  /get-job`);
     console.log(`   GET  /logs`);
     console.log(`   GET  /test`);
     console.log(`\n✅ Servidor iniciado!\n`);
-    addLog('success', '🚀 Servidor V3.2 com debug extremo iniciado');
+    addLog('success', '🚀 Servidor V3.3 com 2 webhooks iniciado');
 });
