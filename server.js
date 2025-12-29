@@ -298,10 +298,10 @@ function scheduleJobRemoval(job) {
 async function reenviarParaDiscord(body, category) {
     const WEBHOOKS = {
         free: "https://discord.com/api/webhooks/1451031458612252704/Oo1K9KNcTSRbRFcSTlveMyNnMA2DOKFATnYKSI8Q-RvMBPI5ZnqF0dRkjKgGHq7o5c1D",
-        basico: "https://discord.com/api/webhooks/1449966669005848668/QAjwTBI7Erv6mZr5hTvsX3Ctgwofoboj7bZZot4v02f6TiGQJustRdsd_ax0vgCo9NTU",
+        basico: "https://discord.com/api/webhooks/1455298059301945437/kuL4S_Rv1pcyZRU1Re7vgYcIWSkc-HegWdNIzeIrlz6VF2J21hN5m66zSuoiCwaNM6eT",
         highlight: "https://discord.com/api/webhooks/1451031692927041678/Pwu3TLXC61aPFcXkz7xnz8P0hoq_vyI2z2-f9t6nSqQ5ncM7A4JsbplrBiDCMjDOKGTl",
         premium: "https://discord.com/api/webhooks/1451031769687134292/ZCdEm84p2TJPAztbpFUc0ovMRS8l97D9ZX9_70zBKCGHY_xufru7yySP5oyqRxpzmkBj",
-        essencial: "https://discord.com/api/webhooks/1450158161959850086/E8uoVdUtw6qYnUi57zJEbAADvQ5OFXUdMGkR1cPu3934jA-Gm3jCvdbbEJhBbDROLHIf"
+        essencial: "https://discord.com/api/webhooks/1455298316865896673/XBDB-c0JnM_aYs6_66OWUrCTGDqrxc4moRGp0Pi-mNc10a--z31U1p90Hy6ifGHzs6o6"
     };
     
     const webhookUrl = WEBHOOKS[category];
@@ -652,4 +652,5 @@ app.listen(PORT, () => {
     console.log(`\n✅ Servidor iniciado!\n`);
     addLog('success', '🚀 Servidor V3.2 com debug extremo iniciado');
 });
+
 
